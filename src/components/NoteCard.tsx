@@ -1,7 +1,7 @@
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { CHU } from '../constants/vi';
-import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
-import { GhiChu } from '../types';
+import { CHU } from "@/constants/vi"
+import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from "@/theme"
+import { GhiChu } from "@/types"
+import { StyleSheet, Text, TouchableOpacity } from 'react-native'
 
 interface Props {
   ghiChu: GhiChu;
@@ -52,4 +52,4 @@ const kieu = StyleSheet.create({
     ...KIEU_CHU.chuThich,
     marginTop: KHOANG_CACH.vua,
   },
-});
+})

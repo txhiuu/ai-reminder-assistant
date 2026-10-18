@@ -1,11 +1,11 @@
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { MAU_SAC } from '../theme';
+import { MAU_SAC } from '@/theme'
+import { Stack } from 'expo-router'
+import { StatusBar } from 'expo-status-bar'
 
 export default function LayoutGoc() {
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style='dark' />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -22,5 +22,5 @@ export default function LayoutGoc() {
         />
       </Stack>
     </>
-  );
+  )
 }
