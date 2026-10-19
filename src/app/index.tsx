@@ -60,7 +60,7 @@ export default function ManHinhTrangChu() {
         text: CHU.chung.co,
         style: 'destructive',
         onPress: async () => {
-          const danhSachMoi = await xoaGhiChu(id);
+          await xoaGhiChu(id);
           taiDuLieu();
         },
       },

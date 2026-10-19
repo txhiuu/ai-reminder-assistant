@@ -1,59 +1,63 @@
-import { GhiChu } from '@/types';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// src/storage/noteStorage.ts
+import { addDoc, collection, deleteDoc, doc, getDocs, orderBy, query } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { GhiChu } from '../types';
 
-const KHOA_LUU_TRU = '@AiReminderApp:notes';
+const COLLECTION_NAME = 'notes';
 
 export const layDanhSach = async (): Promise<GhiChu[]> => {
   try {
-    const chuoiJson = await AsyncStorage.getItem(KHOA_LUU_TRU);
-    if (chuoiJson !== null){
-      return JSON.parse(chuoiJson) as GhiChu[];
-    }
-    return [];
+    
+    const q = query(collection(db, COLLECTION_NAME), orderBy('ngayTao', 'desc'));
+    const querySnapshot = await getDocs(q);
+
+    const danhSach: GhiChu[] = [];
+    querySnapshot.forEach((doc) => {
+      danhSach.push({ id: doc.id, ...doc.data() } as GhiChu);
+    });
+
+    return danhSach;
   } catch (loi) {
-    console.log('[Storage] Lỗi đọc dữ liệu:', loi);
+    console.log('[Firebase] Lỗi lấy danh sách:', loi);
     return [];
   }
 };
 
 export const layTheoId = async (id: string): Promise<GhiChu | null> => {
-  const danhSach = await layDanhSach();
-  const timThay = danhSach.find((gh) => gh.id === id);
-  return timThay ?? null;
-};
-
-export const luuGhiChu = async (ghiChu : GhiChu): Promise<GhiChu[]> => {
   try {
-    const danhSachHienTai = await layDanhSach();
-    const viTriCu = danhSachHienTai.findIndex((gh) => gh.id === ghiChu.id);
-
-    let danhSachMoi: GhiChu[];
-
-    if (viTriCu >= 0) {
-      danhSachMoi = [...danhSachHienTai];
-      danhSachMoi[viTriCu] = { ...ghiChu, ngayCapNhat: Date.now()};
-    }
-
-    else{
-      danhSachMoi = [ghiChu, ...danhSachHienTai];
-    }
-
-    await AsyncStorage.setItem(KHOA_LUU_TRU, JSON.stringify(danhSachMoi));
-    return danhSachMoi;
+    // Với Firebase, lấy theo ID rất nhanh
+    const danhSach = await layDanhSach(); // Cách đơn giản cho người mới
+    return danhSach.find((n) => n.id === id) || null;
   } catch (loi) {
-    console.log('[Storage] Lỗi lưu dữ liệu:', loi);
-    return [];
+    return null;
   }
 };
 
-export const xoaGhiChu = async (id: string): Promise<GhiChu[]> => {
+export const luuGhiChu = async (ghiChu: GhiChu): Promise<void> => {
   try {
-    const danhSachHienTai = await layDanhSach();
-    const danhSachMoi = danhSachHienTai.filter((gh) => gh.id !== id);
-    await AsyncStorage.setItem(KHOA_LUU_TRU, JSON.stringify(danhSachMoi));
-    return danhSachMoi;
+    const { id, ...duLieuLuu } = ghiChu;
+    duLieuLuu.ngayCapNhat = Date.now();
+
+    const noteRef = doc(db, COLLECTION_NAME, id);
+
+    if (ghiChu.id) {
+      const { setDoc } = require('firebase/firestore'); 
+      await setDoc(noteRef, duLieuLuu, { merge: true });
+    } 
+    else {
+      await addDoc(collection(db, COLLECTION_NAME), duLieuLuu);
+    }
   } catch (loi) {
-    console.log('[Storage] Lỗi lưu dữ liệu:', loi);
-    return [];
+    console.log('[Firebase] Lỗi lưu ghi chú:', loi);
+    throw loi;
   }
-} 
+};
+
+export const xoaGhiChu = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, COLLECTION_NAME, id));
+  } catch (loi) {
+    console.log('[Firebase] Lỗi xóa ghi chú:', loi);
+    throw loi;
+  }
+};
