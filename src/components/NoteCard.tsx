@@ -1,15 +1,16 @@
-import { CHU } from "@/constants/vi"
-import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from "@/theme"
-import { GhiChu } from "@/types"
-import { StyleSheet, Text, TouchableOpacity } from 'react-native'
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { CHU } from '../constants/vi';
+import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
+import { GhiChu } from '../types';
 
 interface Props {
   ghiChu: GhiChu;
+  chuoiThoiGianHienThi: string;
   khiBam: () => void;
   khiGiu: () => void;
 }
 
-export default function TheGhiChu({ ghiChu, khiBam, khiGiu }: Props) {
+export default function TheGhiChu({ ghiChu, chuoiThoiGianHienThi, khiBam, khiGiu }: Props) {
   return (
     <TouchableOpacity
       style={kieu.the}
@@ -25,8 +26,11 @@ export default function TheGhiChu({ ghiChu, khiBam, khiGiu }: Props) {
           {ghiChu.noiDung}
         </Text>
       ) : null}
-      <Text style={kieu.thoiGian}>
-        {ghiChu.thoiGianNhac || CHU.trangChu.khongNhac}
+      <Text style={[
+        kieu.thoiGian, 
+        ghiChu.thoiGianNhac ? kieu.coNhac : null
+      ]}>
+        {chuoiThoiGianHienThi}
       </Text>
     </TouchableOpacity>
   );
@@ -52,4 +56,8 @@ const kieu = StyleSheet.create({
     ...KIEU_CHU.chuThich,
     marginTop: KHOANG_CACH.vua,
   },
-})
+  coNhac: {
+    color: MAU_SAC.nhanManh,
+    fontWeight: '500',
+  }
+});

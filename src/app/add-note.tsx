@@ -1,6 +1,8 @@
+import DateTimePicker, { DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
+import dayjs from 'dayjs';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CHU } from '../constants/vi';
 import { layTheoId, luuGhiChu } from '../storage/noteStorage';
@@ -9,16 +11,16 @@ import { GhiChu } from '../types';
 import { taoId } from '../utils/generateId';
 
 export default function ManHinhThemGhiChu() {
-
   const router = useRouter();
-
   const { id } = useLocalSearchParams<{ id?: string }>();
   const dangSua = !!id;
 
   const [tieuDe, setTieuDe] = useState('');
   const [noiDung, setNoiDung] = useState('');
-  const [thoiGianNhac, setThoiGianNhac] = useState('');
+  const [ngayNhac, setNgayNhac] = useState<Date | null>(null);
   const [dangLuu, setDangLuu] = useState(false);
+
+  const [cheDoPicker, setCheDoPicker] = useState<'date' | 'time' | null>(null);
 
   useEffect(() => {
     if (dangSua && id) {
@@ -31,8 +33,52 @@ export default function ManHinhThemGhiChu() {
     if (duLieu) {
       setTieuDe(duLieu.tieuDe);
       setNoiDung(duLieu.noiDung);
-      setThoiGianNhac(duLieu.thoiGianNhac ?? '');
+      if (duLieu.thoiGianNhac) {
+        setNgayNhac(new Date(duLieu.thoiGianNhac));
+      }
     }
+  };
+
+  const khiThayDoiThoiGian = (event: DateTimePickerChangeEvent, ngayDuocChon?: Date) => {
+    if (Platform.OS === 'android') {
+      setCheDoPicker(null);
+    }
+    if (ngayDuocChon) {
+      if (Platform.OS === 'ios') {
+        setNgayNhac(ngayDuocChon);
+      } 
+      else {
+        if (cheDoPicker === 'date') {
+          const ngayDaChon = ngayDuocChon;
+          setNgayNhac(ngayDaChon);
+          setCheDoPicker('time');
+        } 
+        else if (cheDoPicker === 'time') {
+          const ngayHienTai = ngayNhac || new Date();
+          const ngayGioCuoiCung = new Date(
+            ngayHienTai.getFullYear(),
+            ngayHienTai.getMonth(),
+            ngayHienTai.getDate(),
+            ngayDuocChon.getHours(),
+            ngayDuocChon.getMinutes()
+          );
+          setNgayNhac(ngayGioCuoiCung);
+        }
+      }
+    }
+  };
+
+  const moPicker = () => {
+    if (Platform.OS === 'ios') {
+      setCheDoPicker('datetime' as any);
+    }
+    else {
+      setCheDoPicker('date');
+    }
+  };
+
+  const xoaThoiGian = () => {
+    setNgayNhac(null);
   };
 
   const khiBamLuu = async () => {
@@ -46,18 +92,16 @@ export default function ManHinhThemGhiChu() {
 
     try {
       const thoiGianHienTai = Date.now();
-
       const ghiChuMoi: GhiChu = {
         id: id ?? taoId(),
         tieuDe: tieuDe.trim(),
         noiDung: noiDung.trim(),
-        thoiGianNhac: thoiGianNhac.trim() || undefined,
+        thoiGianNhac: ngayNhac ? ngayNhac.toISOString() : undefined,
         ngayTao: thoiGianHienTai,
         ngayCapNhat: thoiGianHienTai,
       };
 
       await luuGhiChu(ghiChuMoi);
-
       router.back();
     } catch (loi) {
       console.log('[AddNote] Lỗi lưu:', loi);
@@ -72,16 +116,13 @@ export default function ManHinhThemGhiChu() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/*HEADER*/}
         <View style={kieu.thanhTieuDe}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={kieu.nutHuy}>{CHU.themGhiChu.nutHuy}</Text>
           </TouchableOpacity>
-
           <Text style={KIEU_CHU.tieuDe}>
             {dangSua ? CHU.themGhiChu.tieuDeSua : CHU.themGhiChu.tieuDeMoi}
           </Text>
-
           <TouchableOpacity onPress={khiBamLuu} disabled={dangLuu}>
             <Text style={[kieu.nutLuu, dangLuu && kieu.nutLuuVoHieu]}>
               {CHU.themGhiChu.nutLuu}
@@ -89,13 +130,11 @@ export default function ManHinhThemGhiChu() {
           </TouchableOpacity>
         </View>
 
-        {/*FORM NHẬP LIỆU*/}
         <ScrollView
           style={kieu.than}
           contentContainerStyle={kieu.noiDungThan}
           keyboardShouldPersistTaps="handled"
         >
-  
           <TextInput
             style={kieu.oTieuDe}
             placeholder={CHU.themGhiChu.goiYTieuDe}
@@ -103,9 +142,7 @@ export default function ManHinhThemGhiChu() {
             value={tieuDe}
             onChangeText={setTieuDe}
             autoFocus={!dangSua}
-            returnKeyType="next"
           />
-
           <TextInput
             style={kieu.oNoiDung}
             placeholder={CHU.themGhiChu.goiYNoiDung}
@@ -117,14 +154,34 @@ export default function ManHinhThemGhiChu() {
           />
 
           <View style={kieu.khungThoiGian}>
-            <Text style={kieu.nhanThoiGian}>Nhắc việc</Text>
-            <TextInput
-              style={kieu.oThoiGian}
-              placeholder={CHU.themGhiChu.goiYThoiGian}
-              placeholderTextColor={MAU_SAC.chuPhu}
-              value={thoiGianNhac}
-              onChangeText={setThoiGianNhac}
-            />
+            <Text style={kieu.nhanThoiGian}>Thời gian nhắc việc</Text>
+            <View style={kieu.hangThoiGian}>
+              <TouchableOpacity
+                style={kieu.nutChonNgay}
+                onPress={moPicker}
+              >
+                <Text style={kieu.chuNutChonNgay}>
+                  {ngayNhac
+                    ? dayjs(ngayNhac).format('HH:mm - DD/MM/YYYY')
+                    : 'Chưa chọn thời gian'}
+                </Text>
+              </TouchableOpacity>
+              {ngayNhac && (
+                <TouchableOpacity style={kieu.nutXoaNgay} onPress={xoaThoiGian}>
+                  <Text style={kieu.chuNutXoaNgay}>Xóa</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {cheDoPicker && (
+              <DateTimePicker
+                value={ngayNhac || new Date()}
+                mode={Platform.OS === 'ios' ? 'datetime' : cheDoPicker}
+                display="default"
+                onValueChange={khiThayDoiThoiGian}
+                minimumDate={new Date()}
+              />
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -133,10 +190,7 @@ export default function ManHinhThemGhiChu() {
 }
 
 const kieu = StyleSheet.create({
-  khungChua: {
-    flex: 1,
-    backgroundColor: MAU_SAC.nen,
-  },
+  khungChua: { flex: 1, backgroundColor: MAU_SAC.nen },
   thanhTieuDe: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -146,24 +200,11 @@ const kieu = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: MAU_SAC.vien,
   },
-  nutHuy: {
-    fontSize: 16,
-    color: MAU_SAC.nhanManh,
-  },
-  nutLuu: {
-    fontSize: 16,
-    color: MAU_SAC.nhanManh,
-    fontWeight: '600',
-  },
-  nutLuuVoHieu: {
-    opacity: 0.4,
-  },
-  than: {
-    flex: 1,
-  },
-  noiDungThan: {
-    padding: KHOANG_CACH.lon,
-  },
+  nutHuy: { fontSize: 16, color: MAU_SAC.nhanManh },
+  nutLuu: { fontSize: 16, color: MAU_SAC.nhanManh, fontWeight: '600' },
+  nutLuuVoHieu: { opacity: 0.4 },
+  than: { flex: 1 },
+  noiDungThan: { padding: KHOANG_CACH.lon },
   oTieuDe: {
     fontSize: 20,
     fontWeight: '600',
@@ -190,11 +231,21 @@ const kieu = StyleSheet.create({
     marginBottom: KHOANG_CACH.vua,
     fontWeight: '600',
   },
-  oThoiGian: {
-    fontSize: 16,
-    color: MAU_SAC.chuChinh,
-    paddingVertical: KHOANG_CACH.vua,
-    borderBottomWidth: 1,
-    borderBottomColor: MAU_SAC.vien,
+  hangThoiGian: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
+  nutChonNgay: {
+    flex: 1,
+    paddingVertical: KHOANG_CACH.trung,
+    paddingHorizontal: KHOANG_CACH.trung,
+    backgroundColor: MAU_SAC.beMat,
+    borderWidth: 1,
+    borderColor: MAU_SAC.vien,
+    borderRadius: 8,
+  },
+  chuNutChonNgay: { fontSize: 16, color: MAU_SAC.chuChinh },
+  nutXoaNgay: { marginLeft: KHOANG_CACH.vua, padding: KHOANG_CACH.vua },
+  chuNutXoaNgay: { color: MAU_SAC.nguyHiem, fontSize: 14, fontWeight: '500' },
 });
