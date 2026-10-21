@@ -20,6 +20,10 @@ export default function LayoutGoc() {
             animation: 'slide_from_bottom',
           }}
         />
+        <Stack.Screen
+          name="chat"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
       </Stack>
     </>
   )

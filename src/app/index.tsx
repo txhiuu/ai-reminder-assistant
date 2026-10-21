@@ -94,12 +94,23 @@ export default function ManHinhTrangChu() {
     <SafeAreaView style={kieu.khungChua}>
       <View style={kieu.thanhTieuDe}>
         <Text style={KIEU_CHU.tieuDeLon}>{CHU.trangChu.tieuDe}</Text>
-        <TouchableOpacity
-          onPress={() => router.push('/add-note')}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text style={kieu.nutThem}>+</Text>
-        </TouchableOpacity>
+        
+        {/* Thêm View bao bọc 2 nút để căn hàng ngang */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity 
+            onPress={() => router.push('/chat')}
+            style={{ marginRight: 16 }}
+          >
+            <Text style={{ fontSize: 16, color: MAU_SAC.nhanManh, fontWeight: '600' }}>Chat AI</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.push('/add-note')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={kieu.nutThem}>+</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {danhSachGhiChu.length === 0 ? (
