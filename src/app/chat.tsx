@@ -38,25 +38,35 @@ export default function ManHinhChat() {
     const ketQua = await phanTichCauLenh(noiDungNhap);
 
     if (ketQua) {
-      try {
-        const thoiGianHienTai = Date.now();
-        await luuGhiChu({
-          id: taoId(),
-          tieuDe: ketQua.tieuDe || 'Ghi chú từ AI',
-          noiDung: ketQua.noiDung || '',
-          thoiGianNhac: ketQua.thoiGianNhac || undefined,
-          ngayTao: thoiGianHienTai,
-          ngayCapNhat: thoiGianHienTai,
-        });
+      if (ketQua.isTask) {
+        try {
+          const thoiGianHienTai = Date.now();
+          await luuGhiChu({
+            id: taoId(),
+            tieuDe: ketQua.tieuDe || 'Ghi chú từ AI',
+            noiDung: ketQua.noiDung || '',
+            thoiGianNhac: ketQua.thoiGianNhac || undefined,
+            ngayTao: thoiGianHienTai,
+            ngayCapNhat: thoiGianHienTai,
+          });
 
+          const tinNhanHeThong: TinNhan = {
+            id: (Date.now() + 1).toString(),
+            vaiTro: 'heThong',
+            noiDung: `✅ Đã tạo ghi chú thành công!\n- Tiêu đề: ${ketQua.tieuDe}\n- Nhắc việc: ${ketQua.thoiGianNhac ? new Date(ketQua.thoiGianNhac).toLocaleString('vi-VN') : 'Không có'}`,
+          };
+          setTinNhan((cu) => [...cu, tinNhanHeThong]);
+        } catch (loi) {
+          Alert.alert('Lỗi', 'Không thể lưu ghi chú.');
+        }
+      } 
+      else {
         const tinNhanHeThong: TinNhan = {
           id: (Date.now() + 1).toString(),
           vaiTro: 'heThong',
-          noiDung: `✅ Đã tạo ghi chú thành công!\n- Tiêu đề: ${ketQua.tieuDe}\n- Nhắc việc: ${ketQua.thoiGianNhac ? new Date(ketQua.thoiGianNhac).toLocaleString('vi-VN') : 'Không có'}`,
+          noiDung: ketQua.reply,
         };
         setTinNhan((cu) => [...cu, tinNhanHeThong]);
-      } catch (loi) {
-        Alert.alert('Lỗi', 'Không thể lưu ghi chú vào cơ sở dữ liệu.');
       }
     }
     else {
