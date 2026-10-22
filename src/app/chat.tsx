@@ -1,9 +1,11 @@
+// src/app/chat.tsx
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react'; // Bổ sung useRef, useEffect
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { phanTichCauLenh } from '../services/geminiService';
-import { luuGhiChu } from '../storage/noteStorage';
+// Bổ sung layDanhSach, xoaGhiChu
+import { layDanhSach, luuGhiChu, xoaGhiChu } from '../storage/noteStorage';
 import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
 import { taoId } from '../utils/generateId';
 
@@ -16,10 +18,26 @@ interface TinNhan {
 export default function ManHinhChat() {
   const router = useRouter();
   const [tinNhan, setTinNhan] = useState<TinNhan[]>([
-    { id: '1', vaiTro: 'heThong', noiDung: 'Chào bạn! Hãy nhập câu lệnh, tôi sẽ tự động tạo ghi chú cho bạn. VD: "Nhắc tôi họp team lúc 3h chiều mai"' }
+    { 
+      id: '1', 
+      vaiTro: 'heThong', 
+      noiDung: 'Chào bạn! Tôi là trợ lý AI. Bạn có thể nhắn: "Nhắc tôi họp team lúc 3h chiều mai" hoặc "Xóa ghi chú đổ xăng".' 
+    }
   ]);
   const [chuoiNhap, setChuoiNhap] = useState('');
   const [dangXuLy, setDangXuLy] = useState(false);
+  
+  // Ref để điều khiển FlatList tự động cuộn
+  const flatListRef = useRef<FlatList>(null);
+
+  // Tự động cuộn xuống khi có tin nhắn mới
+  useEffect(() => {
+    if (tinNhan.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [tinNhan]);
 
   const khiGui = async () => {
     if (chuoiNhap.trim() === '' || dangXuLy) return;
@@ -28,6 +46,13 @@ export default function ManHinhChat() {
     setChuoiNhap('');
     setDangXuLy(true);
 
+    // Lấy 5 tin nhắn gần nhất làm ngữ cảnh
+    const lichSuChat = tinNhan.slice(-5).map((tn) => ({
+      vaiTro: tn.vaiTro,
+      noiDung: tn.noiDung,
+    }));
+
+    // Hiển thị tin nhắn người dùng
     const tinNhanNguoiDung: TinNhan = {
       id: Date.now().toString(),
       vaiTro: 'nguoiDung',
@@ -35,17 +60,19 @@ export default function ManHinhChat() {
     };
     setTinNhan((cu) => [...cu, tinNhanNguoiDung]);
 
-    const ketQua = await phanTichCauLenh(noiDungNhap);
+    // Gọi AI
+    const ketQua = await phanTichCauLenh(noiDungNhap, lichSuChat);
 
     if (ketQua) {
-      if (ketQua.isTask) {
+      // TRƯỜNG HỢP 1: TẠO GHI CHÚ MỚI
+      if (ketQua.action === 'tao_moi' && ketQua.ghiChu) {
         try {
           const thoiGianHienTai = Date.now();
           await luuGhiChu({
             id: taoId(),
-            tieuDe: ketQua.tieuDe || 'Ghi chú từ AI',
-            noiDung: ketQua.noiDung || '',
-            thoiGianNhac: ketQua.thoiGianNhac || undefined,
+            tieuDe: ketQua.ghiChu.tieuDe || 'Ghi chú từ AI',
+            noiDung: ketQua.ghiChu.noiDung || '',
+            thoiGianNhac: ketQua.ghiChu.thoiGianNhac || undefined,
             ngayTao: thoiGianHienTai,
             ngayCapNhat: thoiGianHienTai,
           });
@@ -53,14 +80,15 @@ export default function ManHinhChat() {
           const tinNhanHeThong: TinNhan = {
             id: (Date.now() + 1).toString(),
             vaiTro: 'heThong',
-            noiDung: `✅ Đã tạo ghi chú thành công!\n- Tiêu đề: ${ketQua.tieuDe}\n- Nhắc việc: ${ketQua.thoiGianNhac ? new Date(ketQua.thoiGianNhac).toLocaleString('vi-VN') : 'Không có'}`,
+            noiDung: `✅ Đã tạo ghi chú thành công!\n- Tiêu đề: ${ketQua.ghiChu.tieuDe}\n- Nhắc việc: ${ketQua.ghiChu.thoiGianNhac ? new Date(ketQua.ghiChu.thoiGianNhac).toLocaleString('vi-VN') : 'Không có'}`,
           };
           setTinNhan((cu) => [...cu, tinNhanHeThong]);
         } catch (loi) {
-          Alert.alert('Lỗi', 'Không thể lưu ghi chú.');
+          Alert.alert('Lỗi', 'Không thể lưu ghi chú vào cơ sở dữ liệu.');
         }
       } 
-      else {
+      // TRƯỜNG HỢP 2: AI HỎI LẠI HOẶC TRÒ CHUYỆN
+      else if (ketQua.action === 'hoi_lai' || ketQua.action === 'tro_chuyen') {
         const tinNhanHeThong: TinNhan = {
           id: (Date.now() + 1).toString(),
           vaiTro: 'heThong',
@@ -68,7 +96,45 @@ export default function ManHinhChat() {
         };
         setTinNhan((cu) => [...cu, tinNhanHeThong]);
       }
-    }
+      // TRƯỜNG HỢP 3: XÓA GHI CHÚ (ĐÃ CÓ LOGIC THỰC TẾ)
+      else if (ketQua.action === 'xoa' && ketQua.tuKhoaXoa) {
+        try {
+          // 1. Lấy toàn bộ danh sách ghi chú từ Firebase
+          const tatCaGhiChu = await layDanhSach();
+          
+          // 2. Tìm các ghi chú có chứa từ khóa (không phân biệt hoa thường)
+          const tuKhoa = ketQua.tuKhoaXoa.toLowerCase();
+          const ghiChuCanXoa = tatCaGhiChu.filter(
+            (n) => n.tieuDe.toLowerCase().includes(tuKhoa) || n.noiDung.toLowerCase().includes(tuKhoa)
+          );
+
+          // 3. Tiến hành xóa
+          if (ghiChuCanXoa.length > 0) {
+            for (const ghiChu of ghiChuCanXoa) {
+              await xoaGhiChu(ghiChu.id); // Xóa trên Firebase
+            }
+            setTinNhan((cu) => [...cu, { 
+              id: Date.now().toString(), 
+              vaiTro: 'heThong', 
+              noiDung: `🗑️ Đã xóa thành công ${ghiChuCanXoa.length} ghi chú chứa từ khóa "${ketQua.tuKhoaXoa}".` 
+            }]);
+          } else {
+            setTinNhan((cu) => [...cu, { 
+              id: Date.now().toString(), 
+              vaiTro: 'heThong', 
+              noiDung: `🔍 Không tìm thấy ghi chú nào chứa từ khóa "${ketQua.tuKhoaXoa}".` 
+            }]);
+          }
+        } catch (loi) {
+          setTinNhan((cu) => [...cu, { 
+            id: Date.now().toString(), 
+            vaiTro: 'heThong', 
+            noiDung: '❌ Lỗi khi xóa ghi chú.' 
+          }]);
+        }
+      }
+    } 
+    // TRƯỜNG HỢP 4: LỖI MẠNG / AI KHÔNG PHẢN HỒI
     else {
       const tinNhanLoi: TinNhan = {
         id: (Date.now() + 1).toString(),
@@ -95,6 +161,8 @@ export default function ManHinhChat() {
   return (
     <SafeAreaView style={kieu.khungChua}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        
+        {/* Header */}
         <View style={kieu.thanhTieuDe}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={kieu.nutDong}>Đóng</Text>
@@ -103,22 +171,30 @@ export default function ManHinhChat() {
           <View style={{ width: 40 }} />
         </View>
 
+        {/* Danh sách tin nhắn - Đã gắn ref để tự cuộn */}
         <FlatList
+          ref={flatListRef}
           data={tinNhan}
           keyExtractor={(item) => item.id}
           renderItem={renderTinNhan}
           contentContainerStyle={kieu.danhSachTinNhan}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
+
+        {/* Vòng xoay loading khi AI đang suy nghĩ */}
         {dangXuLy && (
           <View style={{ padding: 10, alignItems: 'flex-start', paddingHorizontal: 24 }}>
             <ActivityIndicator size="small" color={MAU_SAC.nhanManh} />
           </View>
         )}
 
+        {/* Khung nhập tin nhắn */}
         <View style={kieu.khungNhap}>
           <TextInput
             style={kieu.oNhap}
             placeholder="Nhập câu lệnh..."
+            placeholderTextColor={MAU_SAC.chuPhu}
             value={chuoiNhap}
             onChangeText={setChuoiNhap}
             onSubmitEditing={khiGui}
@@ -132,6 +208,7 @@ export default function ManHinhChat() {
             <Text style={kieu.chuNutGui}>Gửi</Text>
           </TouchableOpacity>
         </View>
+        
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
