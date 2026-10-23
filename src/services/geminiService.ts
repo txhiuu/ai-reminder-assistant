@@ -37,17 +37,29 @@ export const phanTichCauLenh = async (
 ): Promise<HanhDong[] | null> => {
   const now = new Date();
   const homNay = now.toISOString();
-  const thuTrongTuan = now.getDay(); 
+  
+  // 1. Chuyển đổi số thành Tên Thứ bằng tiếng Việt để AI không bị nhầm lẫn
+  const thuTrongTuanMap = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+  const tenThuHienTai = thuTrongTuanMap[now.getDay()];
+  
+  // 2. Định dạng lại ngày tháng năm cho rõ ràng (VD: 24/10/2026)
+  const ngayThangNam = now.toLocaleDateString('vi-VN');
 
+  // 3. Nâng cấp Prompt: Đưa ra "Sự thật tuyệt đối" và cấm AI cãi lại
   const systemPrompt = `
-    Bạn là Trợ lý ảo AI. Hôm nay: ${homNay} (Thứ ${thuTrongTuan}).
-    Nhiệm vụ: Phân tích câu nói của người dùng và trả về ĐÚNG MỘT object JSON có cấu trúc sau:
-    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai", "reply": "câu trả lời", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null}]}
+    Bạn là Trợ lý ảo AI. 
+    SỰ THẬT TUYỆT ĐỐI: Hôm nay là ${tenThuHienTai}, ngày ${ngayThangNam} (Giờ ISO: ${homNay}).
+    
+    QUY TẮC TỐI THƯỢNG:
+    - Nếu người dùng hỏi về thời gian, bạn PHẢI dựa vào "SỰ THẬT TUYỆT ĐỐI" ở trên để trả lời.
+    - Nếu người dùng nói sai ngày tháng (ví dụ: "Hôm nay là thứ Sáu" trong khi sự thật là thứ Năm), bạn PHẢI lịch sự khẳng định lại sự thật (ví dụ: "Dạ không phải, hôm nay là thứ Năm ạ"). TUYỆT ĐỐI KHÔNG được đổi ý chiều theo lời người dùng.
+    
+    Nhiệm vụ chính: Phân tích câu nói của người dùng và trả về ĐÚNG MỘT object JSON có cấu trúc sau:
+    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai", "reply": "câu trả lời của bạn", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null}]}
     
     VÍ DỤ:
-    - "Chào" -> {"actions": [{"action": "tro_chuyen", "reply": "Chào bạn!", "ghiChu": null, "tuKhoaXoa": null}]}
+    - "Hôm nay thứ mấy?" -> {"actions": [{"action": "tro_chuyen", "reply": "Hôm nay là ${tenThuHienTai}, ngày ${ngayThangNam} ạ.", "ghiChu": null, "tuKhoaXoa": null}]}
     - "Họp 3h chiều mai" -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo", "ghiChu": {"tieuDe": "Họp", "noiDung": "", "thoiGianNhac": "2026-10-24T15:00:00Z"}, "tuKhoaXoa": null}]}
-    - "Xóa họp, nhắc đá bóng 5h chiều" -> {"actions": [{"action": "xoa", "reply": "Đã xóa", "ghiChu": null, "tuKhoaXoa": "họp"}, {"action": "tao_moi", "reply": "Đã tạo", "ghiChu": {"tieuDe": "đá bóng", "noiDung": "", "thoiGianNhac": "2026-10-23T17:00:00Z"}, "tuKhoaXoa": null}]}
     
     LƯU Ý: BẮT BUỘC chỉ trả về JSON, không sinh ra văn bản bên ngoài.
   `;
