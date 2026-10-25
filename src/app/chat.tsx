@@ -186,6 +186,46 @@ export default function ManHinhChat() {
           }
         }
 
+        // SỬA GHI CHÚ
+        else if (hanhDong.action === 'sua_ghi_chu' && hanhDong.tuKhoaSua) {
+          try {
+            const tatCaGhiChu = await layDanhSach();
+            const tuKhoa = hanhDong.tuKhoaSua.toLowerCase();
+         
+            const ghiChuGoc = tatCaGhiChu.find(
+              (n) => n.tieuDe.toLowerCase().includes(tuKhoa) || n.noiDung.toLowerCase().includes(tuKhoa)
+            );
+
+            if (ghiChuGoc) {
+              const ghiChuCapNhat = {
+                ...ghiChuGoc,
+                tieuDe: hanhDong.ghiChu?.tieuDe || ghiChuGoc.tieuDe,
+                noiDung: hanhDong.ghiChu?.noiDung || ghiChuGoc.noiDung,
+                thoiGianNhac: hanhDong.ghiChu?.thoiGianNhac || ghiChuGoc.thoiGianNhac,
+                ngayCapNhat: Date.now(),
+              };
+
+              await luuGhiChu(ghiChuCapNhat);
+
+              setTinNhan((cu) => [...cu, { 
+                id: Date.now().toString(), 
+                vaiTro: 'heThong', 
+                noiDung: `✅ Đã cập nhật ghi chú "${ghiChuGoc.tieuDe}".\n- Giờ mới: ${ghiChuCapNhat.thoiGianNhac ? new Date(ghiChuCapNhat.thoiGianNhac).toLocaleString('vi-VN') : 'Không có'}`,
+                thoiGian: Date.now()
+              }]);
+            } else {
+              setTinNhan((cu) => [...cu, { 
+                id: Date.now().toString(), 
+                vaiTro: 'heThong', 
+                noiDung: `🔍 Không tìm thấy ghi chú nào chứa từ khóa "${hanhDong.tuKhoaSua}" để sửa.`,
+                thoiGian: Date.now()
+              }]);
+            }
+          } catch (loi) {
+            setTinNhan((cu) => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: '❌ Lỗi khi cập nhật ghi chú.', thoiGian: Date.now() }]);
+          }
+        }
+
         // HỎI LẠI HOẶC TRÒ CHUYỆN
         else if (hanhDong.action === 'hoi_lai' || hanhDong.action === 'tro_chuyen') {
           setTinNhan((cu) => [...cu, { 
