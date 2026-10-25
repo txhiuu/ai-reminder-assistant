@@ -19,7 +19,7 @@ export default function ManHinhChat() {
     { 
       id: '1', 
       vaiTro: 'heThong', 
-      noiDung: 'Chào bạn! Tôi là trợ lý AI. Bạn có thể nhắn: "Nhắc tôi họp team lúc 3h chiều mai" hoặc "Xóa ghi chú đổ xăng".' 
+      noiDung: 'Chào bạn! Tôi là trợ lý AI. Bạn có thể nhắn: "Nhắc tôi họp team lúc 3h chiều mai" hoặc "Cho tôi xem ghi chú ăn sáng".' 
     }
   ]);
   const [chuoiNhap, setChuoiNhap] = useState('');
@@ -27,12 +27,16 @@ export default function ManHinhChat() {
   
   const flatListRef = useRef<FlatList>(null);
 
-  useEffect(() => {
-    if (tinNhan.length > 0) {
-      setTimeout(() => {
+  const scrollToBottom = () => {
+    if (flatListRef.current && tinNhan.length > 0) {
+      requestAnimationFrame(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      });
     }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
   }, [tinNhan]);
 
   const khiGui = async () => {
@@ -112,7 +116,32 @@ export default function ManHinhChat() {
           }
         }
 
-        // TRƯỜNG HỢP 3: HỎI LẠI HOẶC TRÒ CHUYỆN
+        // TRƯỜNG HỢP 3: XEM/TÌM GHI CHÚ (MỚI)
+        else if (hanhDong.action === 'xem_ghi_chu' && hanhDong.tuKhoaXem) {
+          try {
+            const tatCaGhiChu = await layDanhSach();
+            const tuKhoa = hanhDong.tuKhoaXem.toLowerCase();
+            
+            const coGhiChu = tatCaGhiChu.some(
+              (n) => n.tieuDe.toLowerCase().includes(tuKhoa) || n.noiDung.toLowerCase().includes(tuKhoa)
+            );
+
+            if (coGhiChu) {
+              // Đóng Chat và chuyển về Home kèm từ khóa lọc
+              router.replace({ pathname: '/', params: { search: hanhDong.tuKhoaXem } });
+            } else {
+              setTinNhan((cu) => [...cu, { 
+                id: Date.now().toString(), 
+                vaiTro: 'heThong', 
+                noiDung: `🔍 Không tìm thấy ghi chú nào chứa từ khóa "${hanhDong.tuKhoaXem}".` 
+              }]);
+            }
+          } catch (loi) {
+            setTinNhan((cu) => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: '❌ Lỗi khi tìm ghi chú.' }]);
+          }
+        }
+
+        // TRƯỜNG HỢP 4: HỎI LẠI HOẶC TRÒ CHUYỆN
         else if (hanhDong.action === 'hoi_lai' || hanhDong.action === 'tro_chuyen') {
           setTinNhan((cu) => [...cu, { 
             id: Date.now().toString(), 
@@ -122,7 +151,7 @@ export default function ManHinhChat() {
         }
       }
     } 
-    // TRƯỜNG HỢP 4: LỖI
+    // TRƯỜNG HỢP 5: LỖI
     else {
       setTinNhan((cu) => [...cu, {
         id: (Date.now() + 1).toString(),
@@ -133,7 +162,6 @@ export default function ManHinhChat() {
 
     setDangXuLy(false);
   };
-
 
   const renderTinNhan = ({ item }: { item: TinNhan }) => {
     const laNguoiDung = item.vaiTro === 'nguoiDung';
@@ -150,7 +178,6 @@ export default function ManHinhChat() {
     <SafeAreaView style={kieu.khungChua}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         
-        {/* Header */}
         <View style={kieu.thanhTieuDe}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={kieu.nutDong}>Đóng</Text>
@@ -159,7 +186,6 @@ export default function ManHinhChat() {
           <View style={{ width: 40 }} />
         </View>
 
-        {/* Danh sách tin nhắn - Đã gắn ref để tự cuộn */}
         <FlatList
           ref={flatListRef}
           data={tinNhan}
@@ -167,17 +193,17 @@ export default function ManHinhChat() {
           renderItem={renderTinNhan}
           contentContainerStyle={kieu.danhSachTinNhan}
           showsVerticalScrollIndicator={false}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={scrollToBottom}
+          onLayout={scrollToBottom}
+          keyboardDismissMode="on-drag"
         />
 
-        {/* Vòng xoay loading khi AI đang suy nghĩ */}
         {dangXuLy && (
           <View style={{ padding: 10, alignItems: 'flex-start', paddingHorizontal: 24 }}>
             <ActivityIndicator size="small" color={MAU_SAC.nhanManh} />
           </View>
         )}
 
-        {/* Khung nhập tin nhắn */}
         <View style={kieu.khungNhap}>
           <TextInput
             style={kieu.oNhap}
