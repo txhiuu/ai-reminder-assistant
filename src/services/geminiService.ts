@@ -3,10 +3,10 @@ const GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
 const GROQ_URL = `https://api.groq.com/openai/v1/chat/completions`;
-const GROQ_MODELS_URL = `https://api.groq.com/openai/v1/models`; // Endpoint lấy danh sách model
+const GROQ_MODELS_URL = `https://api.groq.com/openai/v1/models`;
 
 export interface HanhDong {
-  action: 'tao_moi' | 'xoa' | 'tro_chuyen' | 'hoi_lai';
+  action: 'tao_moi' | 'xoa' | 'tro_chuyen' | 'hoi_lai' | 'xem_ghi_chu'; // Thêm xem_ghi_chu
   reply: string;
   ghiChu?: {
     tieuDe: string;
@@ -14,6 +14,7 @@ export interface HanhDong {
     thoiGianNhac: string | null;
   } | null;
   tuKhoaXoa?: string | null;
+  tuKhoaXem?: string | null; // Thêm trường từ khóa xem
 }
 
 const safeParseJSON = (text: string) => {
@@ -37,36 +38,45 @@ export const phanTichCauLenh = async (
 ): Promise<HanhDong[] | null> => {
   const now = new Date();
   const homNay = now.toISOString();
-  
-  // 1. Chuyển đổi số thành Tên Thứ bằng tiếng Việt để AI không bị nhầm lẫn
   const thuTrongTuanMap = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
   const tenThuHienTai = thuTrongTuanMap[now.getDay()];
-  
-  // 2. Định dạng lại ngày tháng năm cho rõ ràng (VD: 24/10/2026)
   const ngayThangNam = now.toLocaleDateString('vi-VN');
 
-  // 3. Nâng cấp Prompt: Đưa ra "Sự thật tuyệt đối" và cấm AI cãi lại
-  const systemPrompt = `
+    const systemPrompt = `
     Bạn là Trợ lý ảo AI. 
     SỰ THẬT TUYỆT ĐỐI: Hôm nay là ${tenThuHienTai}, ngày ${ngayThangNam} (Giờ ISO: ${homNay}).
     
-    QUY TẮC TỐI THƯỢNG:
-    - Nếu người dùng hỏi về thời gian, bạn PHẢI dựa vào "SỰ THẬT TUYỆT ĐỐI" ở trên để trả lời.
-    - Nếu người dùng nói sai ngày tháng (ví dụ: "Hôm nay là thứ Sáu" trong khi sự thật là thứ Năm), bạn PHẢI lịch sự khẳng định lại sự thật (ví dụ: "Dạ không phải, hôm nay là thứ Năm ạ"). TUYỆT ĐỐI KHÔNG được đổi ý chiều theo lời người dùng.
+    QUY TẮC THỜI GIAN (CỰC KỲ QUAN TRỌNG):
+    - Múi giờ của người dùng là Việt Nam (UTC+7).
+    - Khi trả về trường "thoiGianNhac", BẮT BUỘC phải trả về định dạng "YYYY-MM-DDTHH:mm:00" (TUYỆT ĐỐI KHÔNG có chữ Z ở cuối).
+    - Ví dụ: Nếu hôm nay là 25/10/2026, người dùng nói "3h chiều mai", bạn phải trả về chính xác là "2026-10-26T15:00:00".
     
-    Nhiệm vụ chính: Phân tích câu nói của người dùng và trả về ĐÚNG MỘT object JSON có cấu trúc sau:
-    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai", "reply": "câu trả lời của bạn", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null}]}
+    QUY TẮC PHÂN LOẠI HÀNH ĐỘNG (CỰC KỲ QUAN TRỌNG):
+    1. HÀNH ĐỘNG "tao_moi": Khi người dùng có ý định TẠO LỊCH, NHẮC VIỆC (thường bắt đầu bằng: "Nhắc tôi...", "Lên lịch...", "Tạo ghi chú..."). PHẢI trích xuất thông tin vào "ghiChu".
+    2. HÀNH ĐỘNG "xem_ghi_chu": Khi người dùng muốn TÌM KIẾM, XEM, MỞ ghi chú đã có (thường bắt đầu bằng: "Cho tôi xem...", "Tìm ghi chú...", "Mở ghi chú..."). PHẢI trích xuất từ khóa vào "tuKhoaXem".
+    3. HÀNH ĐỘNG "xoa": Khi người dùng muốn XÓA ghi chú (thường bắt đầu bằng: "Xóa...", "Hủy..."). PHẢI trích xuất từ khóa vào "tuKhoaXoa".
+    4. HÀNH ĐỘNG "tro_chuyen" hoặc "hoi_lai": Các trường hợp còn lại.
+
+    Nhiệm vụ: Phân tích câu nói và trả về ĐÚNG MỘT object JSON:
+    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai"|"xem_ghi_chu", "reply": "câu trả lời của bạn", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null, "tuKhoaXem": "..." | null}]}
     
-    VÍ DỤ:
-    - "Hôm nay thứ mấy?" -> {"actions": [{"action": "tro_chuyen", "reply": "Hôm nay là ${tenThuHienTai}, ngày ${ngayThangNam} ạ.", "ghiChu": null, "tuKhoaXoa": null}]}
-    - "Họp 3h chiều mai" -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo", "ghiChu": {"tieuDe": "Họp", "noiDung": "", "thoiGianNhac": "2026-10-24T15:00:00Z"}, "tuKhoaXoa": null}]}
+    VÍ DỤ MINH HỌA RÕ RÀNG (BẮT BUỘC TUÂN THEO):
+    - User: "nhắc tôi ăn sáng với bánh mì vào 8h sáng mai" 
+      -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo lịch ăn sáng", "ghiChu": {"tieuDe": "Ăn sáng", "noiDung": "với bánh mì", "thoiGianNhac": "2026-10-26T08:00:00Z"}, "tuKhoaXoa": null, "tuKhoaXem": null}]}
+      
+    - User: "Cho tôi xem ghi chú ăn sáng" 
+      -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang mở ghi chú ăn sáng", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "ăn sáng"}]}
+      
+    - User: "Tìm ghi chú họp" 
+      -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang tìm ghi chú họp", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "họp"}]}
+      
+    - User: "Xóa ghi chú ăn sáng" 
+      -> {"actions": [{"action": "xoa", "reply": "Đã xóa", "ghiChu": null, "tuKhoaXoa": "ăn sáng", "tuKhoaXem": null}]}
     
     LƯU Ý: BẮT BUỘC chỉ trả về JSON, không sinh ra văn bản bên ngoài.
   `;
 
-  // ==========================================
-  // CHIẾN THUẬT 1: GỌI GEMINI (Timeout 4.5s)
-  // ==========================================
+  // CHIẾN THUẬT 1: GỌI GEMINI
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4500);
@@ -108,30 +118,21 @@ export const phanTichCauLenh = async (
     console.log('⚠️ Gemini quá thời gian, chuyển sang Groq...');
   }
 
-  // ==========================================
-  // CHIẾN THUẬT 2: GỌI GROQ (Tự động lấy danh sách model)
-  // ==========================================
+  // CHIẾN THUẬT 2: GỌI GROQ
   try {
     console.log('🔄 Đang lấy danh sách model khả dụng từ Groq...');
     const modelsRes = await fetch(GROQ_MODELS_URL, {
       headers: { 'Authorization': `Bearer ${GROQ_KEY}` },
     });
 
-    if (!modelsRes.ok) {
-      console.log('❌ Không thể lấy danh sách model từ Groq.');
-      return null;
-    }
+    if (!modelsRes.ok) return null;
 
     const modelsData = await modelsRes.json();
-
     const activeChatModels = modelsData.data
       .map((m: any) => m.id)
       .filter((id: string) => !id.includes('whisper') && !id.includes('tts') && !id.includes('guard') && !id.includes('safeguard'));
 
-    if (activeChatModels.length === 0) {
-      console.log('❌ Groq không có model chat nào khả dụng.');
-      return null;
-    }
+    if (activeChatModels.length === 0) return null;
 
     console.log('✅ Các model Groq khả dụng:', activeChatModels);
 
