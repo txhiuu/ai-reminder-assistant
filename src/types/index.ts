@@ -6,3 +6,10 @@ export interface GhiChu {
   ngayTao: number;
   ngayCapNhat: number;
 }
+
+export interface TinNhan {
+  id: string;
+  vaiTro: 'nguoiDung' | 'heThong';
+  noiDung: string;
+  thoiGian: number; 
+}
