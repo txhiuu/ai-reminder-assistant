@@ -1,9 +1,9 @@
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Alert, FlatList, ListRenderItem, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, FlatList, ListRenderItem, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TheGhiChu from '../components/NoteCard';
 import { CHU } from '../constants/vi';
@@ -15,10 +15,17 @@ dayjs.extend(relativeTime);
 dayjs.locale('vi');
 
 export default function ManHinhTrangChu() {
-
   const [danhSachGhiChu, setDanhSachGhiChu] = useState<GhiChu[]>([]);
-
   const router = useRouter();
+  
+  // Lấy tham số search từ URL (nếu được điều hướng từ Chat)
+  const { search } = useLocalSearchParams<{ search?: string }>();
+  const [tuKhoaTimKiem, setTuKhoaTimKiem] = useState(search || '');
+
+  // Đồng bộ state khi URL thay đổi
+  useEffect(() => {
+    setTuKhoaTimKiem(search || '');
+  }, [search]);
 
   useFocusEffect(
     useCallback(() => {
@@ -29,24 +36,18 @@ export default function ManHinhTrangChu() {
   const taiDuLieu = async () => {
     const duLieu = await layDanhSach();
 
-    // --- LOGIC SẮP XẾP MỚI ---
-    // Ưu tiên 1: Có nhắc việc (xếp theo thời gian gần nhất)
-    // Ưu tiên 2: Không có nhắc việc (xếp theo ngày tạo mới nhất)
+    // --- LOGIC SẮP XẾP ---
     const duLieuDaSapXep = duLieu.sort((a, b) => {
       const aCoNhac = !!a.thoiGianNhac;
       const bCoNhac = !!b.thoiGianNhac;
 
-      // Nếu a có nhắc, b không có -> a lên trước
       if (aCoNhac && !bCoNhac) return -1;
-      // Nếu a không có, b có -> b lên trước
       if (!aCoNhac && bCoNhac) return 1;
 
-      // Nếu cả 2 đều có nhắc -> so sánh thời gian nhắc
       if (aCoNhac && bCoNhac) {
         return new Date(a.thoiGianNhac!).getTime() - new Date(b.thoiGianNhac!).getTime();
       }
 
-      // Nếu cả 2 đều không có nhắc -> so sánh ngày tạo (mới nhất lên đầu)
       return b.ngayTao - a.ngayTao;
     });
 
@@ -67,8 +68,20 @@ export default function ManHinhTrangChu() {
     ]);
   };
 
+  // Hàm xóa bộ lọc
+  const xoaBoLoc = () => {
+    setTuKhoaTimKiem('');
+    router.setParams({ search: undefined }); // Xóa param khỏi URL
+  };
+
+  // Lọc danh sách dựa trên từ khóa
+  const danhSachHienThi = danhSachGhiChu.filter((gh) => {
+    if (!tuKhoaTimKiem) return true;
+    const tk = tuKhoaTimKiem.toLowerCase();
+    return gh.tieuDe.toLowerCase().includes(tk) || gh.noiDung.toLowerCase().includes(tk);
+  });
+
   const renderThe: ListRenderItem<GhiChu> = ({ item }) => {
-    
     let chuoiThoiGianHienThi: string = CHU.trangChu.khongNhac;
 
     if (item.thoiGianNhac) {
@@ -95,7 +108,6 @@ export default function ManHinhTrangChu() {
       <View style={kieu.thanhTieuDe}>
         <Text style={KIEU_CHU.tieuDeLon}>{CHU.trangChu.tieuDe}</Text>
         
-        {/* Thêm View bao bọc 2 nút để căn hàng ngang */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity 
             onPress={() => router.push('/chat')}
@@ -113,14 +125,26 @@ export default function ManHinhTrangChu() {
         </View>
       </View>
 
-      {danhSachGhiChu.length === 0 ? (
+      {/* Thanh thông báo tìm kiếm */}
+      {tuKhoaTimKiem ? (
+        <View style={kieu.thanhTimKiem}>
+          <Text style={kieu.chuTimKiem}>Kết quả cho: "{tuKhoaTimKiem}"</Text>
+          <TouchableOpacity onPress={xoaBoLoc}>
+            <Text style={kieu.nutXoaLoc}>Xóa bộ lọc</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {danhSachHienThi.length === 0 ? (
         <View style={kieu.trangThaiTrong}>
-          <Text style={kieu.tieuDeTrong}>{CHU.trangChu.trong}</Text>
-          <Text style={kieu.phuDeTrong}>{CHU.trangChu.phuDeTrong}</Text>
+          <Text style={kieu.tieuDeTrong}>
+            {tuKhoaTimKiem ? 'Không tìm thấy ghi chú nào' : CHU.trangChu.trong}
+          </Text>
+          {!tuKhoaTimKiem && <Text style={kieu.phuDeTrong}>{CHU.trangChu.phuDeTrong}</Text>}
         </View>
       ) : (
         <FlatList
-          data={danhSachGhiChu}
+          data={danhSachHienThi}
           keyExtractor={(item) => item.id}
           renderItem={renderThe}
           contentContainerStyle={kieu.noiDungDanhSach}
@@ -166,4 +190,26 @@ const kieu = StyleSheet.create({
     textAlign: 'center',
   },
   phuDeTrong: { ...KIEU_CHU.chuThich, textAlign: 'center' },
+  // Style cho thanh tìm kiếm
+  thanhTimKiem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#E5F1FF', // Màu xanh nhạt
+    marginHorizontal: KHOANG_CACH.lon,
+    padding: KHOANG_CACH.vua,
+    borderRadius: 8,
+    marginBottom: KHOANG_CACH.trung,
+  },
+  chuTimKiem: {
+    fontSize: 14,
+    color: MAU_SAC.nhanManh,
+    fontWeight: '500',
+    flex: 1,
+  },
+  nutXoaLoc: {
+    fontSize: 14,
+    color: MAU_SAC.nguyHiem,
+    fontWeight: 'bold',
+  },
 });
