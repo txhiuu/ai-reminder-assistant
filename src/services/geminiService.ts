@@ -6,15 +6,16 @@ const GROQ_URL = `https://api.groq.com/openai/v1/chat/completions`;
 const GROQ_MODELS_URL = `https://api.groq.com/openai/v1/models`;
 
 export interface HanhDong {
-  action: 'tao_moi' | 'xoa' | 'tro_chuyen' | 'hoi_lai' | 'xem_ghi_chu'; // Thêm xem_ghi_chu
+  action: 'tao_moi' | 'xoa' | 'tro_chuyen' | 'hoi_lai' | 'xem_ghi_chu' | 'sua_ghi_chu'; 
   reply: string;
   ghiChu?: {
-    tieuDe: string;
-    noiDung: string;
+    tieuDe: string | null;
+    noiDung: string | null;
     thoiGianNhac: string | null;
   } | null;
   tuKhoaXoa?: string | null;
-  tuKhoaXem?: string | null; // Thêm trường từ khóa xem
+  tuKhoaXem?: string | null; 
+  tuKhoaSua?: string | null;
 }
 
 const safeParseJSON = (text: string) => {
@@ -46,32 +47,39 @@ export const phanTichCauLenh = async (
     Bạn là Trợ lý ảo AI. 
     SỰ THẬT TUYỆT ĐỐI: Hôm nay là ${tenThuHienTai}, ngày ${ngayThangNam} (Giờ ISO: ${homNay}).
     
-    QUY TẮC THỜI GIAN (CỰC KỲ QUAN TRỌNG):
+    QUY TẮC THỜI GIAN:
     - Múi giờ của người dùng là Việt Nam (UTC+7).
     - Khi trả về trường "thoiGianNhac", BẮT BUỘC phải trả về định dạng "YYYY-MM-DDTHH:mm:00" (TUYỆT ĐỐI KHÔNG có chữ Z ở cuối).
     - Ví dụ: Nếu hôm nay là 25/10/2026, người dùng nói "3h chiều mai", bạn phải trả về chính xác là "2026-10-26T15:00:00".
     
-    QUY TẮC PHÂN LOẠI HÀNH ĐỘNG (CỰC KỲ QUAN TRỌNG):
+    QUY TẮC PHÂN LOẠI HÀNH ĐỘNG:
     1. HÀNH ĐỘNG "tao_moi": Khi người dùng có ý định TẠO LỊCH, NHẮC VIỆC (thường bắt đầu bằng: "Nhắc tôi...", "Lên lịch...", "Tạo ghi chú..."). PHẢI trích xuất thông tin vào "ghiChu".
     2. HÀNH ĐỘNG "xem_ghi_chu": Khi người dùng muốn TÌM KIẾM, XEM, MỞ ghi chú đã có (thường bắt đầu bằng: "Cho tôi xem...", "Tìm ghi chú...", "Mở ghi chú..."). PHẢI trích xuất từ khóa vào "tuKhoaXem".
     3. HÀNH ĐỘNG "xoa": Khi người dùng muốn XÓA ghi chú (thường bắt đầu bằng: "Xóa...", "Hủy..."). PHẢI trích xuất từ khóa vào "tuKhoaXoa".
-    4. HÀNH ĐỘNG "tro_chuyen" hoặc "hoi_lai": Các trường hợp còn lại.
+    4. HÀNH ĐỘNG "sua_ghi_chu": Khi người dùng muốn THAY ĐỔI, CẬP NHẬT ghi chú đã có (thường bắt đầu bằng: "Đổi lịch...", "Sửa ghi chú...", "Dời giờ...", "Thay đổi...").
+       - BẮT BUỘC trích xuất từ khóa của ghi chú cũ vào "tuKhoaSua".
+       - BẮT BUỘC trích xuất thông tin MỚI vào "ghiChu". 
+       - LƯU Ý ĐẶC BIỆT: Chỉ trường nào có sự thay đổi mới điền giá trị. Trường nào KHÔNG thay đổi phải trả về null (VD: nếu chỉ đổi giờ, thì "tieuDe" và "noiDung" phải là null).
+    5. HÀNH ĐỘNG "tro_chuyen" hoặc "hoi_lai": Các trường hợp còn lại.
 
     Nhiệm vụ: Phân tích câu nói và trả về ĐÚNG MỘT object JSON:
-    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai"|"xem_ghi_chu", "reply": "câu trả lời của bạn", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null, "tuKhoaXem": "..." | null}]}
+    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai"|"xem_ghi_chu"|"sua_ghi_chu", "reply": "câu trả lời của bạn", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null, "tuKhoaXem": "..." | null, "tuKhoaSua": "..." | null}]}
     
     VÍ DỤ MINH HỌA RÕ RÀNG (BẮT BUỘC TUÂN THEO):
     - User: "nhắc tôi ăn sáng với bánh mì vào 8h sáng mai" 
-      -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo lịch ăn sáng", "ghiChu": {"tieuDe": "Ăn sáng", "noiDung": "với bánh mì", "thoiGianNhac": "2026-10-26T08:00:00Z"}, "tuKhoaXoa": null, "tuKhoaXem": null}]}
+      -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo lịch ăn sáng", "ghiChu": {"tieuDe": "Ăn sáng", "noiDung": "với bánh mì", "thoiGianNhac": "2026-10-26T08:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": null}]}
       
     - User: "Cho tôi xem ghi chú ăn sáng" 
-      -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang mở ghi chú ăn sáng", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "ăn sáng"}]}
-      
-    - User: "Tìm ghi chú họp" 
-      -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang tìm ghi chú họp", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "họp"}]}
+      -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang mở ghi chú ăn sáng", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "ăn sáng", "tuKhoaSua": null}]}
       
     - User: "Xóa ghi chú ăn sáng" 
-      -> {"actions": [{"action": "xoa", "reply": "Đã xóa", "ghiChu": null, "tuKhoaXoa": "ăn sáng", "tuKhoaXem": null}]}
+      -> {"actions": [{"action": "xoa", "reply": "Đã xóa", "ghiChu": null, "tuKhoaXoa": "ăn sáng", "tuKhoaXem": null, "tuKhoaSua": null}]}
+      
+    - User: "Đổi lịch họp thành 4h chiều mai" 
+      -> {"actions": [{"action": "sua_ghi_chu", "reply": "Đã cập nhật giờ họp", "ghiChu": {"tieuDe": null, "noiDung": null, "thoiGianNhac": "2026-10-26T16:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": "họp"}]}
+      
+    - User: "Sửa ghi chú mua sữa thành mua bánh mì" 
+      -> {"actions": [{"action": "sua_ghi_chu", "reply": "Đã đổi tên ghi chú", "ghiChu": {"tieuDe": "mua bánh mì", "noiDung": null, "thoiGianNhac": null}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": "mua sữa"}]}
     
     LƯU Ý: BẮT BUỘC chỉ trả về JSON, không sinh ra văn bản bên ngoài.
   `;
