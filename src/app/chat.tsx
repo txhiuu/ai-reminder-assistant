@@ -1,8 +1,15 @@
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { phanTichCauLenh } from '../services/geminiService';
+import { phanTichAmThanh, phanTichCauLenh } from '../services/geminiService';
 import { layLichSuChat, luuLichSuChat, xoaLichSuChat } from '../storage/chatStorage';
 import { layDanhSach, luuGhiChu, xoaGhiChu } from '../storage/noteStorage';
 import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
@@ -12,14 +19,17 @@ import { taoId } from '../utils/generateId';
 export default function ManHinhChat() {
   const router = useRouter();
   
-  //Khởi tạo mảng rỗng, sẽ load từ Storage
   const [tinNhan, setTinNhan] = useState<TinNhan[]>([]);
   const [chuoiNhap, setChuoiNhap] = useState('');
   const [dangXuLy, setDangXuLy] = useState(false);
   
+  // STATE VÀ HOOK CHO TÍNH NĂNG GHI ÂM
+  const [dangGhiAm, setDangGhiAm] = useState(false);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder);
+  
   const flatListRef = useRef<FlatList>(null);
 
-  //Load lịch sử khi mở app
   useEffect(() => {
     const khoiTaoChat = async () => {
       const lichSu = await layLichSuChat();
@@ -37,7 +47,6 @@ export default function ManHinhChat() {
     khoiTaoChat();
   }, []);
 
-  //Tự động lưu mỗi khi có tin nhắn mới
   useEffect(() => {
     if (tinNhan.length > 0) {
       luuLichSuChat(tinNhan);
@@ -56,7 +65,6 @@ export default function ManHinhChat() {
     scrollToBottom();
   }, [tinNhan]);
 
-  //Hàm làm mới chat
   const lamMoiChat = () => {
     Alert.alert(
       'Làm mới cuộc trò chuyện',
@@ -80,29 +88,7 @@ export default function ManHinhChat() {
     );
   };
 
-  const khiGui = async () => {
-    if (chuoiNhap.trim() === '' || dangXuLy) return;
-
-    const noiDungNhap = chuoiNhap.trim();
-    setChuoiNhap('');
-    setDangXuLy(true);
-
-    const lichSuChat = tinNhan.slice(-5).map((tn) => ({
-      vaiTro: tn.vaiTro,
-      noiDung: tn.noiDung,
-    }));
-
-    const tinNhanNguoiDung: TinNhan = {
-      id: Date.now().toString(),
-      vaiTro: 'nguoiDung',
-      noiDung: noiDungNhap,
-      thoiGian: Date.now()
-    };
-    setTinNhan((cu) => [...cu, tinNhanNguoiDung]);
-
-    // Gọi AI
-    const ketQua = await phanTichCauLenh(noiDungNhap, lichSuChat);
-
+  const xuLyKetQuaAI = async (ketQua: any[] | null) => {
     if (ketQua && Array.isArray(ketQua) && ketQua.length > 0) {
       for (const hanhDong of ketQua) {
         // TẠO GHI CHÚ
@@ -246,8 +232,98 @@ export default function ManHinhChat() {
         thoiGian: Date.now()
       }]);
     }
-
     setDangXuLy(false);
+  };
+
+  const khiGui = async () => {
+    if (chuoiNhap.trim() === '' || dangXuLy) return;
+
+    const noiDungNhap = chuoiNhap.trim();
+    setChuoiNhap('');
+    setDangXuLy(true);
+
+    const lichSuChat = tinNhan.slice(-5).map((tn) => ({
+      vaiTro: tn.vaiTro,
+      noiDung: tn.noiDung,
+    }));
+
+    const tinNhanNguoiDung: TinNhan = {
+      id: Date.now().toString(),
+      vaiTro: 'nguoiDung',
+      noiDung: noiDungNhap,
+      thoiGian: Date.now()
+    };
+    setTinNhan((cu) => [...cu, tinNhanNguoiDung]);
+
+    const ketQua = await phanTichCauLenh(noiDungNhap, lichSuChat);
+    await xuLyKetQuaAI(ketQua); 
+  };
+
+  // BẮT ĐẦU GHI ÂM
+  const batDauGhiAm = async () => {
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Quyền truy cập', 'Vui lòng cấp quyền micro để sử dụng tính năng này.');
+        return;
+      }
+
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+
+      if (recorderState.isRecording) {
+        await audioRecorder.stop();
+      }
+
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      
+      setDangGhiAm(true);
+      console.log('🎙️ Bắt đầu ghi âm...');
+    } catch (err) {
+      console.error('Lỗi khi bắt đầu ghi âm:', err);
+      setDangGhiAm(false); 
+    }
+  };
+
+  // DỪNG GHI ÂM VÀ GỬI ĐI
+  const dungGhiAm = async () => {
+    if (!dangGhiAm) return;
+    
+    setDangGhiAm(false);
+    setDangXuLy(true);
+
+    try {
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri; 
+      console.log('🎙️ File ghi âm tại:', uri);
+
+      if (uri) {
+        const tinNhanNguoiDung: TinNhan = {
+          id: Date.now().toString(),
+          vaiTro: 'nguoiDung',
+          noiDung: '🎙️ [Tin nhắn thoại]',
+          thoiGian: Date.now()
+        };
+        setTinNhan((cu) => [...cu, tinNhanNguoiDung]);
+
+        const ketQua = await phanTichAmThanh(uri);
+        await xuLyKetQuaAI(ketQua);
+      } else {
+        setTinNhan((cu) => [...cu, { 
+          id: Date.now().toString(), 
+          vaiTro: 'heThong', 
+          noiDung: '❌ Không thể lấy được file ghi âm.', 
+          thoiGian: Date.now() 
+        }]);
+        setDangXuLy(false);
+      }
+    } catch (error) {
+      console.error('Lỗi khi dừng ghi âm:', error);
+      setDangXuLy(false);
+    }
   };
 
   const renderTinNhan = ({ item }: { item: TinNhan }) => {
@@ -265,14 +341,11 @@ export default function ManHinhChat() {
     <SafeAreaView style={kieu.khungChua}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         
-        {/* Thêm nút Làm mới trên Header */}
         <View style={kieu.thanhTieuDe}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={kieu.nutDong}>Đóng</Text>
           </TouchableOpacity>
-          
           <Text style={KIEU_CHU.tieuDe}>Trợ lý AI</Text>
-          
           <TouchableOpacity onPress={lamMoiChat}>
             <Text style={kieu.nutLamMoi}>Làm mới</Text>
           </TouchableOpacity>
@@ -304,12 +377,22 @@ export default function ManHinhChat() {
             value={chuoiNhap}
             onChangeText={setChuoiNhap}
             onSubmitEditing={khiGui}
-            editable={!dangXuLy}
+            editable={!dangXuLy && !dangGhiAm}
           />
+          
           <TouchableOpacity
-            style={[kieu.nutGui, dangXuLy && { opacity: 0.5 }]}
-            onPress={khiGui}
+            style={[kieu.nutMicro, dangGhiAm && { backgroundColor: MAU_SAC.nguyHiem }]}
+            onPressIn={batDauGhiAm} 
+            onPressOut={dungGhiAm}   
             disabled={dangXuLy}
+          >
+            <Text style={{ fontSize: 20 }}>{dangGhiAm ? '🔴' : '🎙️'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[kieu.nutGui, (dangXuLy || dangGhiAm) && { opacity: 0.5 }]}
+            onPress={khiGui}
+            disabled={dangXuLy || dangGhiAm}
           >
             <Text style={kieu.chuNutGui}>Gửi</Text>
           </TouchableOpacity>
@@ -328,7 +411,7 @@ const kieu = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: MAU_SAC.vien,
   },
   nutDong: { fontSize: 16, color: MAU_SAC.nhanManh },
-  nutLamMoi: { fontSize: 16, color: MAU_SAC.nguyHiem, fontWeight: '600' }, // Style cho nút làm mới
+  nutLamMoi: { fontSize: 16, color: MAU_SAC.nguyHiem, fontWeight: '600' },
   danhSachTinNhan: { padding: KHOANG_CACH.lon, paddingBottom: KHOANG_CACH.trung },
   hopTinNhan: { maxWidth: '80%', padding: 12, borderRadius: 16, marginBottom: KHOANG_CACH.trung },
   tinNguoiDung: { alignSelf: 'flex-end', backgroundColor: MAU_SAC.nhanManh, borderBottomRightRadius: 4 },
@@ -343,6 +426,15 @@ const kieu = StyleSheet.create({
     flex: 1, backgroundColor: MAU_SAC.nen, borderRadius: 20, paddingHorizontal: 16,
     paddingVertical: 10, fontSize: 16, color: MAU_SAC.chuChinh, maxHeight: 100,
   },
-  nutGui: { marginLeft: KHOANG_CACH.vua, backgroundColor: MAU_SAC.nhanManh, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
+  nutMicro: {
+    marginLeft: KHOANG_CACH.vua,
+    backgroundColor: '#E5E5EA', 
+    borderRadius: 20,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  nutGui: { marginLeft: KHOANG_CACH.vua, backgroundColor: MAU_SAC.nhanManh, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 },
   chuNutGui: { color: '#FFFFFF', fontWeight: '600' },
 });
