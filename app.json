@@ -8,7 +8,10 @@
     "scheme": "aireminderapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Ứng dụng cần micro để nhận lệnh giọng nói của bạn."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,12 +20,14 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["RECORD_AUDIO"]
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    
     "plugins": [
       "expo-router",
       [
@@ -33,7 +38,13 @@
           "imageWidth": 76
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Cho phép $(PRODUCT_NAME) truy cập micro để bạn ra lệnh bằng giọng nói."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
