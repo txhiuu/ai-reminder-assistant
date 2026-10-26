@@ -1,7 +1,9 @@
+import * as FileSystem from 'expo-file-system/legacy';
+
 const GEMINI_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const GROQ_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
 
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_KEY}`;
 const GROQ_URL = `https://api.groq.com/openai/v1/chat/completions`;
 const GROQ_MODELS_URL = `https://api.groq.com/openai/v1/models`;
 
@@ -33,17 +35,14 @@ const safeParseJSON = (text: string) => {
   }
 };
 
-export const phanTichCauLenh = async (
-  cauLenh: string, 
-  lichSuChat: { vaiTro: string, noiDung: string }[] = []
-): Promise<HanhDong[] | null> => {
+const getSystemPrompt = () => {
   const now = new Date();
   const homNay = now.toISOString();
   const thuTrongTuanMap = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
   const tenThuHienTai = thuTrongTuanMap[now.getDay()];
   const ngayThangNam = now.toLocaleDateString('vi-VN');
 
-    const systemPrompt = `
+  return `
     Bạn là Trợ lý ảo AI. 
     SỰ THẬT TUYỆT ĐỐI: Hôm nay là ${tenThuHienTai}, ngày ${ngayThangNam} (Giờ ISO: ${homNay}).
     
@@ -53,38 +52,38 @@ export const phanTichCauLenh = async (
     - Ví dụ: Nếu hôm nay là 25/10/2026, người dùng nói "3h chiều mai", bạn phải trả về chính xác là "2026-10-26T15:00:00".
     
     QUY TẮC PHÂN LOẠI HÀNH ĐỘNG:
-    1. HÀNH ĐỘNG "tao_moi": Khi người dùng có ý định TẠO LỊCH, NHẮC VIỆC (thường bắt đầu bằng: "Nhắc tôi...", "Lên lịch...", "Tạo ghi chú..."). PHẢI trích xuất thông tin vào "ghiChu".
-    2. HÀNH ĐỘNG "xem_ghi_chu": Khi người dùng muốn TÌM KIẾM, XEM, MỞ ghi chú đã có (thường bắt đầu bằng: "Cho tôi xem...", "Tìm ghi chú...", "Mở ghi chú..."). PHẢI trích xuất từ khóa vào "tuKhoaXem".
-    3. HÀNH ĐỘNG "xoa": Khi người dùng muốn XÓA ghi chú (thường bắt đầu bằng: "Xóa...", "Hủy..."). PHẢI trích xuất từ khóa vào "tuKhoaXoa".
-    4. HÀNH ĐỘNG "sua_ghi_chu": Khi người dùng muốn THAY ĐỔI, CẬP NHẬT ghi chú đã có (thường bắt đầu bằng: "Đổi lịch...", "Sửa ghi chú...", "Dời giờ...", "Thay đổi...").
-       - BẮT BUỘC trích xuất từ khóa của ghi chú cũ vào "tuKhoaSua".
-       - BẮT BUỘC trích xuất thông tin MỚI vào "ghiChu". 
-       - LƯU Ý ĐẶC BIỆT: Chỉ trường nào có sự thay đổi mới điền giá trị. Trường nào KHÔNG thay đổi phải trả về null (VD: nếu chỉ đổi giờ, thì "tieuDe" và "noiDung" phải là null).
+    1. HÀNH ĐỘNG "tao_moi": Tạo lịch, nhắc việc (thường bắt đầu bằng: "Nhắc tôi...", "Lên lịch...", "Tạo ghi chú..."). PHẢI trích xuất thông tin vào "ghiChu".
+    2. HÀNH ĐỘNG "xem_ghi_chu": Tìm kiếm, xem, mở ghi chú ("Cho tôi xem...", "Tìm ghi chú..."). PHẢI trích xuất từ khóa vào "tuKhoaXem".
+    3. HÀNH ĐỘNG "xoa": Xóa ghi chú ("Xóa...", "Hủy..."). PHẢI trích xuất từ khóa vào "tuKhoaXoa".
+    4. HÀNH ĐỘNG "sua_ghi_chu": Sửa ghi chú ("Đổi lịch...", "Sửa..."). BẮT BUỘC trích xuất từ khóa cũ vào "tuKhoaSua" và thông tin mới vào "ghiChu" (trường không đổi trả về null).
     5. HÀNH ĐỘNG "tro_chuyen" hoặc "hoi_lai": Các trường hợp còn lại.
 
     Nhiệm vụ: Phân tích câu nói và trả về ĐÚNG MỘT object JSON:
     {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai"|"xem_ghi_chu"|"sua_ghi_chu", "reply": "câu trả lời của bạn", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null, "tuKhoaXem": "..." | null, "tuKhoaSua": "..." | null}]}
     
-    VÍ DỤ MINH HỌA RÕ RÀNG (BẮT BUỘC TUÂN THEO):
+    VÍ DỤ MINH HỌA (BẮT BUỘC TUÂN THEO):
     - User: "nhắc tôi ăn sáng với bánh mì vào 8h sáng mai" 
       -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo lịch ăn sáng", "ghiChu": {"tieuDe": "Ăn sáng", "noiDung": "với bánh mì", "thoiGianNhac": "2026-10-26T08:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": null}]}
-      
     - User: "Cho tôi xem ghi chú ăn sáng" 
       -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang mở ghi chú ăn sáng", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "ăn sáng", "tuKhoaSua": null}]}
-      
     - User: "Xóa ghi chú ăn sáng" 
       -> {"actions": [{"action": "xoa", "reply": "Đã xóa", "ghiChu": null, "tuKhoaXoa": "ăn sáng", "tuKhoaXem": null, "tuKhoaSua": null}]}
-      
     - User: "Đổi lịch họp thành 4h chiều mai" 
       -> {"actions": [{"action": "sua_ghi_chu", "reply": "Đã cập nhật giờ họp", "ghiChu": {"tieuDe": null, "noiDung": null, "thoiGianNhac": "2026-10-26T16:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": "họp"}]}
-      
     - User: "Sửa ghi chú mua sữa thành mua bánh mì" 
       -> {"actions": [{"action": "sua_ghi_chu", "reply": "Đã đổi tên ghi chú", "ghiChu": {"tieuDe": "mua bánh mì", "noiDung": null, "thoiGianNhac": null}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": "mua sữa"}]}
     
-    LƯU Ý: BẮT BUỘC chỉ trả về JSON, không sinh ra văn bản bên ngoài.
+    LƯU Ý: BẮT BUỘC chỉ trả về JSON.
   `;
+};
 
-  // CHIẾN THUẬT 1: GỌI GEMINI
+export const phanTichCauLenh = async (
+  cauLenh: string, 
+  lichSuChat: { vaiTro: string, noiDung: string }[] = []
+): Promise<HanhDong[] | null> => {
+  const systemPrompt = getSystemPrompt(); 
+
+  // GỌI GEMINI
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4500);
@@ -126,7 +125,7 @@ export const phanTichCauLenh = async (
     console.log('⚠️ Gemini quá thời gian, chuyển sang Groq...');
   }
 
-  // CHIẾN THUẬT 2: GỌI GROQ
+  // GỌI GROQ
   try {
     console.log('🔄 Đang lấy danh sách model khả dụng từ Groq...');
     const modelsRes = await fetch(GROQ_MODELS_URL, {
@@ -162,7 +161,7 @@ export const phanTichCauLenh = async (
           body: JSON.stringify({
             model: modelName, 
             messages: [
-              { role: "system", content: systemPrompt },
+              { role: "system", content: systemPrompt }, 
               ...groqHistory,
               { role: "user", content: cauLenh }
             ],
@@ -194,5 +193,61 @@ export const phanTichCauLenh = async (
   }
 
   console.log('❌ Toàn bộ hệ thống AI đều thất bại.');
+  return null;
+};
+
+// HÀM XỬ LÝ ÂM THANH
+export const phanTichAmThanh = async (fileUri: string): Promise<HanhDong[] | null> => {
+  try {
+    console.log('⏳ Đang đọc file âm thanh...');
+    const base64Audio = await FileSystem.readAsStringAsync(fileUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    const systemPrompt = getSystemPrompt(); 
+
+    console.log('🎙️ Đang gửi âm thanh lên Gemini...');
+    const geminiRes = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: "Hãy nghe và phân tích file âm thanh này." },
+              {
+                inlineData: {
+                  mimeType: "audio/m4a",
+                  data: base64Audio
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.1,
+        }
+      }),
+    });
+
+    if (geminiRes.ok) {
+      const data = await geminiRes.json();
+      const chuoiJson = data.candidates[0].content.parts[0].text;
+      const parsed = safeParseJSON(chuoiJson);
+      
+      if (parsed && parsed.actions) {
+        console.log('🎙️ [AI Provider] Trả lời bởi: Gemini (Voice)');
+        return parsed.actions as HanhDong[];
+      }
+    } else {
+      const loi = await geminiRes.json();
+      console.log('⚠️ Lỗi Gemini xử lý âm thanh:', JSON.stringify(loi));
+    }
+  } catch (loi) {
+    console.log('❌ Lỗi khi xử lý âm thanh:', loi);
+  }
   return null;
 };
