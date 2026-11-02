@@ -43,37 +43,31 @@ const getSystemPrompt = () => {
   const ngayThangNam = now.toLocaleDateString('vi-VN');
 
   return `
-    Bạn là Trợ lý ảo AI. 
-    SỰ THẬT TUYỆT ĐỐI: Hôm nay là ${tenThuHienTai}, ngày ${ngayThangNam} (Giờ ISO: ${homNay}).
+    Bạn là Trợ lý ảo AI. Hôm nay: ${tenThuHienTai}, ${ngayThangNam} (ISO: ${homNay}).
     
-    QUY TẮC THỜI GIAN:
-    - Múi giờ của người dùng là Việt Nam (UTC+7).
-    - Khi trả về trường "thoiGianNhac", BẮT BUỘC phải trả về định dạng "YYYY-MM-DDTHH:mm:00" (TUYỆT ĐỐI KHÔNG có chữ Z ở cuối).
-    - Ví dụ: Nếu hôm nay là 25/10/2026, người dùng nói "3h chiều mai", bạn phải trả về chính xác là "2026-10-26T15:00:00".
-    
-    QUY TẮC PHÂN LOẠI HÀNH ĐỘNG:
-    1. HÀNH ĐỘNG "tao_moi": Tạo lịch, nhắc việc (thường bắt đầu bằng: "Nhắc tôi...", "Lên lịch...", "Tạo ghi chú..."). PHẢI trích xuất thông tin vào "ghiChu".
-    2. HÀNH ĐỘNG "xem_ghi_chu": Tìm kiếm, xem, mở ghi chú ("Cho tôi xem...", "Tìm ghi chú..."). PHẢI trích xuất từ khóa vào "tuKhoaXem".
-    3. HÀNH ĐỘNG "xoa": Xóa ghi chú ("Xóa...", "Hủy..."). PHẢI trích xuất từ khóa vào "tuKhoaXoa".
-    4. HÀNH ĐỘNG "sua_ghi_chu": Sửa ghi chú ("Đổi lịch...", "Sửa..."). BẮT BUỘC trích xuất từ khóa cũ vào "tuKhoaSua" và thông tin mới vào "ghiChu" (trường không đổi trả về null).
-    5. HÀNH ĐỘNG "tro_chuyen" hoặc "hoi_lai": Các trường hợp còn lại.
+    QUY TẮC BẮT BUỘC:
+    1. Múi giờ: Việt Nam (UTC+7). Trường "thoiGianNhac" phải có định dạng "YYYY-MM-DDTHH:mm:00" (KHÔNG có chữ Z).
+    2. Chỉ trả về JSON hợp lệ, không giải thích bên ngoài.
 
-    Nhiệm vụ: Phân tích câu nói và trả về ĐÚNG MỘT object JSON:
-    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai"|"xem_ghi_chu"|"sua_ghi_chu", "reply": "câu trả lời của bạn", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null, "tuKhoaXem": "..." | null, "tuKhoaSua": "..." | null}]}
-    
-    VÍ DỤ MINH HỌA (BẮT BUỘC TUÂN THEO):
-    - User: "nhắc tôi ăn sáng với bánh mì vào 8h sáng mai" 
-      -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo lịch ăn sáng", "ghiChu": {"tieuDe": "Ăn sáng", "noiDung": "với bánh mì", "thoiGianNhac": "2026-10-26T08:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": null}]}
-    - User: "Cho tôi xem ghi chú ăn sáng" 
-      -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang mở ghi chú ăn sáng", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "ăn sáng", "tuKhoaSua": null}]}
-    - User: "Xóa ghi chú ăn sáng" 
-      -> {"actions": [{"action": "xoa", "reply": "Đã xóa", "ghiChu": null, "tuKhoaXoa": "ăn sáng", "tuKhoaXem": null, "tuKhoaSua": null}]}
-    - User: "Đổi lịch họp thành 4h chiều mai" 
-      -> {"actions": [{"action": "sua_ghi_chu", "reply": "Đã cập nhật giờ họp", "ghiChu": {"tieuDe": null, "noiDung": null, "thoiGianNhac": "2026-10-26T16:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": "họp"}]}
-    - User: "Sửa ghi chú mua sữa thành mua bánh mì" 
-      -> {"actions": [{"action": "sua_ghi_chu", "reply": "Đã đổi tên ghi chú", "ghiChu": {"tieuDe": "mua bánh mì", "noiDung": null, "thoiGianNhac": null}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": "mua sữa"}]}
-    
-    LƯU Ý: BẮT BUỘC chỉ trả về JSON.
+    CẤU TRÚC JSON:
+    {"actions": [{"action": "tao_moi"|"xoa"|"tro_chuyen"|"hoi_lai"|"xem_ghi_chu"|"sua_ghi_chu", "reply": "câu trả lời", "ghiChu": {"tieuDe", "noiDung", "thoiGianNhac"} | null, "tuKhoaXoa": "..." | null, "tuKhoaXem": "..." | null, "tuKhoaSua": "..." | null}]}
+
+    QUY TẮC HÀNH ĐỘNG:
+    - "tao_moi": Tạo nhắc việc (VD: "Nhắc tôi..."). Trích xuất vào "ghiChu".
+    - "xem_ghi_chu": Xem/Tìm ghi chú. Trích xuất vào "tuKhoaXem".
+    - "xoa": Xóa ghi chú. Trích xuất vào "tuKhoaXoa".
+    - "sua_ghi_chu": Sửa ghi chú. Trích xuất từ khóa cũ vào "tuKhoaSua" và thông tin mới vào "ghiChu". LƯU Ý: Trường nào không thay đổi phải để null.
+    - "tro_chuyen" | "hoi_lai": Các trường hợp còn lại.
+
+    VÍ DỤ (BẮT BUỘC TUÂN THEO):
+    - User: "nhắc tôi họp lúc 3h chiều mai" 
+      -> {"actions": [{"action": "tao_moi", "reply": "Đã tạo", "ghiChu": {"tieuDe": "họp", "noiDung": "", "thoiGianNhac": "2026-10-26T15:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": null}]}
+    - User: "đổi lịch họp thành 4h chiều" 
+      -> {"actions": [{"action": "sua_ghi_chu", "reply": "Đã cập nhật", "ghiChu": {"tieuDe": null, "noiDung": null, "thoiGianNhac": "2026-10-26T16:00:00"}, "tuKhoaXoa": null, "tuKhoaXem": null, "tuKhoaSua": "họp"}]}
+    - User: "xem ghi chú ăn sáng" 
+      -> {"actions": [{"action": "xem_ghi_chu", "reply": "Đang mở", "ghiChu": null, "tuKhoaXoa": null, "tuKhoaXem": "ăn sáng", "tuKhoaSua": null}]}
+    - User: "xóa ghi chú họp" 
+      -> {"actions": [{"action": "xoa", "reply": "Đã xóa", "ghiChu": null, "tuKhoaXoa": "họp", "tuKhoaXem": null, "tuKhoaSua": null}]}
   `;
 };
 
