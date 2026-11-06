@@ -1,35 +1,148 @@
-import {
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  useAudioRecorder,
-  useAudioRecorderState,
-} from 'expo-audio';
+// src/app/chat.tsx
+import { AudioStudioModule, useAudioRecorder } from '@siteed/audio-studio'; // Import AudioStudioModule
+import base64 from 'base64-js';
+import { useAudioPlayer } from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { phanTichAmThanh, phanTichCauLenh } from '../services/geminiService';
+
+import { LiveSocketService } from '../services/liveSocketService';
 import { layLichSuChat, luuLichSuChat, xoaLichSuChat } from '../storage/chatStorage';
 import { layDanhSach, luuGhiChu, xoaGhiChu } from '../storage/noteStorage';
 import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
 import { TinNhan } from '../types';
 import { taoId } from '../utils/generateId';
 
+// Hàm chuyển đổi PCM 24kHz sang WAV để phát âm thanh
+function pcmToWav(pcmBase64: string, sampleRate: number = 24000): string {
+  const pcmBuffer = base64.toByteArray(pcmBase64);
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+  const blockAlign = numChannels * bitsPerSample / 8;
+  const dataSize = pcmBuffer.length;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, string: string) => { for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  const pcmArray = new Uint8Array(pcmBuffer);
+  new Uint8Array(buffer, 44).set(pcmArray);
+
+  return base64.fromByteArray(new Uint8Array(buffer));
+}
+
 export default function ManHinhChat() {
   const router = useRouter();
-  
   const [tinNhan, setTinNhan] = useState<TinNhan[]>([]);
   const [chuoiNhap, setChuoiNhap] = useState('');
   const [dangXuLy, setDangXuLy] = useState(false);
-  
-  // STATE VÀ HOOK CHO TÍNH NĂNG GHI ÂM
   const [dangGhiAm, setDangGhiAm] = useState(false);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(audioRecorder);
   
+  const socketService = useRef(new LiveSocketService()).current;
   const flatListRef = useRef<FlatList>(null);
 
+  // SỬ DỤNG HOOK USEAUDIOPLAYER CỦA EXPO-AUDIO
+  const player = useAudioPlayer(); 
+
+  // SỬA LỖI 1: Khởi tạo hook mà không truyền tham số cấu hình
+  const audioRecorder = useAudioRecorder();
+
+  // 1. KHỞI TẠO KẾT NỐI VÀ LẮNG NGHE SỰ KIỆN
+  useEffect(() => {
+    const initSocket = async () => {
+      try {
+        await socketService.connect();
+        console.log('✅ Đã kết nối Live API');
+      } catch (err) {
+        Alert.alert('Lỗi', 'Không thể kết nối với Trợ lý AI.');
+      }
+    };
+    initSocket();
+
+    // Lắng nghe âm thanh AI trả về
+    socketService.onAudioData(async (base64Audio) => {
+      try {
+        const wavBase64 = pcmToWav(base64Audio, 24000);
+        const fileUri = FileSystem.cacheDirectory + `ai_voice_${Date.now()}.wav`;
+        await FileSystem.writeAsStringAsync(fileUri, wavBase64, { encoding: FileSystem.EncodingType.Base64 });
+        
+        player.replace({ uri: fileUri });
+        player.play();
+      } catch (error) { 
+        console.log('Lỗi phát âm thanh:', error); 
+      }
+    });
+
+    // Lắng nghe văn bản (Text) AI trả về
+    socketService.onText((text) => {
+      console.log('AI nói:', text);
+    });
+
+    // Lắng nghe yêu cầu gọi hàm (Function Call) từ AI
+    socketService.onFunctionCall(async (name, args) => {
+      let resultMessage = "Thành công";
+      setDangXuLy(true);
+
+      try {
+        if (name === 'tao_ghi_chu') {
+          await luuGhiChu({
+            id: taoId(),
+            tieuDe: args.tieuDe,
+            noiDung: args.noiDung || '',
+            thoiGianNhac: args.thoiGianNhac || undefined,
+            ngayTao: Date.now(),
+            ngayCapNhat: Date.now(),
+          });
+          setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: `✅ Đã tạo ghi chú: ${args.tieuDe}`, thoiGian: Date.now() }]);
+        } 
+        else if (name === 'xoa_ghi_chu') {
+          const tatCaGhiChu = await layDanhSach();
+          const tuKhoa = args.tuKhoaXoa.toLowerCase();
+          const ghiChuCanXoa = tatCaGhiChu.filter((n) => n.tieuDe.toLowerCase().includes(tuKhoa) || n.noiDung.toLowerCase().includes(tuKhoa));
+          
+          if (ghiChuCanXoa.length > 0) {
+            for (const ghiChu of ghiChuCanXoa) await xoaGhiChu(ghiChu.id);
+            setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: `🗑️ Đã xóa ${ghiChuCanXoa.length} ghi chú.`, thoiGian: Date.now() }]);
+            resultMessage = "Đã xóa thành công";
+          } else {
+            setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: `🔍 Không tìm thấy ghi chú.`, thoiGian: Date.now() }]);
+            resultMessage = "Không tìm thấy ghi chú để xóa";
+          }
+        } 
+        else if (name === 'xem_ghi_chu') {
+          router.replace({ pathname: '/', params: { search: args.tuKhoaXem } });
+          resultMessage = "Đã mở màn hình tìm kiếm";
+        }
+      } catch (e) { 
+        resultMessage = "Thất bại"; 
+      }
+      
+      socketService.sendFunctionResponse(name, { success: true, message: resultMessage });
+      setDangXuLy(false);
+    });
+
+    return () => {
+      socketService.disconnect();
+    };
+  }, []);
+
+  // 2. LOAD LỊCH SỬ CHAT VÀ TỰ ĐỘNG CUỘN
   useEffect(() => {
     const khoiTaoChat = async () => {
       const lichSu = await layLichSuChat();
@@ -39,7 +152,7 @@ export default function ManHinhChat() {
         setTinNhan([{ 
           id: '1', 
           vaiTro: 'heThong', 
-          noiDung: 'Chào bạn! Tôi là trợ lý AI. Bạn có thể nhắn: "Nhắc tôi họp team lúc 3h chiều mai" hoặc "Cho tôi xem ghi chú ăn sáng".',
+          noiDung: 'Chào bạn! Tôi là trợ lý AI. Bạn có thể nhấn giữ nút Micro để nói hoặc nhắn tin.',
           thoiGian: Date.now()
         }]);
       }
@@ -65,265 +178,62 @@ export default function ManHinhChat() {
     scrollToBottom();
   }, [tinNhan]);
 
+  // 3. CÁC HÀM XỬ LÝ GIAO TIẾP
+
   const lamMoiChat = () => {
-    Alert.alert(
-      'Làm mới cuộc trò chuyện',
-      'Bạn có chắc muốn xóa toàn bộ lịch sử chat hiện tại?',
-      [
-        { text: 'Hủy', style: 'cancel' },
-        { 
-          text: 'Xóa', 
-          style: 'destructive',
-          onPress: async () => {
-            await xoaLichSuChat();
-            setTinNhan([{ 
-              id: Date.now().toString(), 
-              vaiTro: 'heThong', 
-              noiDung: 'Đã làm mới cuộc trò chuyện. Tôi có thể giúp gì cho bạn?',
-              thoiGian: Date.now()
-            }]);
-          }
-        }
-      ]
-    );
-  };
-
-  const xuLyKetQuaAI = async (ketQua: any[] | null) => {
-    if (ketQua && Array.isArray(ketQua) && ketQua.length > 0) {
-      for (const hanhDong of ketQua) {
-        // TẠO GHI CHÚ
-        if (hanhDong.action === 'tao_moi' && hanhDong.ghiChu) {
-          try {
-            const thoiGianHienTai = Date.now();
-            await luuGhiChu({
-              id: taoId(),
-              tieuDe: hanhDong.ghiChu.tieuDe || 'Ghi chú từ AI',
-              noiDung: hanhDong.ghiChu.noiDung || '',
-              thoiGianNhac: hanhDong.ghiChu.thoiGianNhac || undefined,
-              ngayTao: thoiGianHienTai,
-              ngayCapNhat: thoiGianHienTai,
-            });
-
-            setTinNhan((cu) => [...cu, { 
-              id: Date.now().toString(), 
-              vaiTro: 'heThong', 
-              noiDung: `✅ Đã tạo ghi chú: ${hanhDong.ghiChu?.tieuDe}`,
-              thoiGian: Date.now()
-            }]);
-          } catch (loi) {
-            setTinNhan((cu) => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: '❌ Lỗi lưu ghi chú.', thoiGian: Date.now() }]);
-          }
-        }
-
-        // XÓA GHI CHÚ
-        else if (hanhDong.action === 'xoa' && hanhDong.tuKhoaXoa) {
-          try {
-            const tatCaGhiChu = await layDanhSach();
-            const tuKhoa = hanhDong.tuKhoaXoa.toLowerCase();
-            const ghiChuCanXoa = tatCaGhiChu.filter(
-              (n) => n.tieuDe.toLowerCase().includes(tuKhoa) || n.noiDung.toLowerCase().includes(tuKhoa)
-            );
-
-            if (ghiChuCanXoa.length > 0) {
-              for (const ghiChu of ghiChuCanXoa) {
-                await xoaGhiChu(ghiChu.id);
-              }
-              setTinNhan((cu) => [...cu, { 
-                id: Date.now().toString(), 
-                vaiTro: 'heThong', 
-                noiDung: `🗑️ Đã xóa ${ghiChuCanXoa.length} ghi chú chứa từ khóa "${hanhDong.tuKhoaXoa}".`,
-                thoiGian: Date.now()
-              }]);
-            } else {
-              setTinNhan((cu) => [...cu, { 
-                id: Date.now().toString(), 
-                vaiTro: 'heThong', 
-                noiDung: `🔍 Không tìm thấy ghi chú chứa "${hanhDong.tuKhoaXoa}".`,
-                thoiGian: Date.now()
-              }]);
-            }
-          } catch (loi) {
-            setTinNhan((cu) => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: '❌ Lỗi xóa ghi chú.', thoiGian: Date.now() }]);
-          }
-        }
-
-        // XEM/TÌM GHI CHÚ
-        else if (hanhDong.action === 'xem_ghi_chu' && hanhDong.tuKhoaXem) {
-          try {
-            const tatCaGhiChu = await layDanhSach();
-            const tuKhoa = hanhDong.tuKhoaXem.toLowerCase();
-            
-            const coGhiChu = tatCaGhiChu.some(
-              (n) => n.tieuDe.toLowerCase().includes(tuKhoa) || n.noiDung.toLowerCase().includes(tuKhoa)
-            );
-
-            if (coGhiChu) {
-              router.replace({ pathname: '/', params: { search: hanhDong.tuKhoaXem } });
-            } else {
-              setTinNhan((cu) => [...cu, { 
-                id: Date.now().toString(), 
-                vaiTro: 'heThong', 
-                noiDung: `🔍 Không tìm thấy ghi chú nào chứa từ khóa "${hanhDong.tuKhoaXem}".`,
-                thoiGian: Date.now()
-              }]);
-            }
-          } catch (loi) {
-            setTinNhan((cu) => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: '❌ Lỗi khi tìm ghi chú.', thoiGian: Date.now() }]);
-          }
-        }
-
-        // SỬA GHI CHÚ
-        else if (hanhDong.action === 'sua_ghi_chu' && hanhDong.tuKhoaSua) {
-          try {
-            const tatCaGhiChu = await layDanhSach();
-            const tuKhoa = hanhDong.tuKhoaSua.toLowerCase();
-         
-            const ghiChuGoc = tatCaGhiChu.find(
-              (n) => n.tieuDe.toLowerCase().includes(tuKhoa) || n.noiDung.toLowerCase().includes(tuKhoa)
-            );
-
-            if (ghiChuGoc) {
-              const ghiChuCapNhat = {
-                ...ghiChuGoc,
-                tieuDe: hanhDong.ghiChu?.tieuDe || ghiChuGoc.tieuDe,
-                noiDung: hanhDong.ghiChu?.noiDung || ghiChuGoc.noiDung,
-                thoiGianNhac: hanhDong.ghiChu?.thoiGianNhac || ghiChuGoc.thoiGianNhac,
-                ngayCapNhat: Date.now(),
-              };
-
-              await luuGhiChu(ghiChuCapNhat);
-
-              setTinNhan((cu) => [...cu, { 
-                id: Date.now().toString(), 
-                vaiTro: 'heThong', 
-                noiDung: `✅ Đã cập nhật ghi chú "${ghiChuGoc.tieuDe}".\n- Giờ mới: ${ghiChuCapNhat.thoiGianNhac ? new Date(ghiChuCapNhat.thoiGianNhac).toLocaleString('vi-VN') : 'Không có'}`,
-                thoiGian: Date.now()
-              }]);
-            } else {
-              setTinNhan((cu) => [...cu, { 
-                id: Date.now().toString(), 
-                vaiTro: 'heThong', 
-                noiDung: `🔍 Không tìm thấy ghi chú nào chứa từ khóa "${hanhDong.tuKhoaSua}" để sửa.`,
-                thoiGian: Date.now()
-              }]);
-            }
-          } catch (loi) {
-            setTinNhan((cu) => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: '❌ Lỗi khi cập nhật ghi chú.', thoiGian: Date.now() }]);
-          }
-        }
-
-        // HỎI LẠI HOẶC TRÒ CHUYỆN
-        else if (hanhDong.action === 'hoi_lai' || hanhDong.action === 'tro_chuyen') {
-          setTinNhan((cu) => [...cu, { 
-            id: Date.now().toString(), 
-            vaiTro: 'heThong', 
-            noiDung: hanhDong.reply,
-            thoiGian: Date.now()
-          }]);
-        }
-      }
-    } 
-    // LỖI
-    else {
-      setTinNhan((cu) => [...cu, {
-        id: (Date.now() + 1).toString(),
-        vaiTro: 'heThong',
-        noiDung: '❌ Xin lỗi, tôi không hiểu ý bạn hoặc có lỗi mạng. Vui lòng thử lại.',
-        thoiGian: Date.now()
-      }]);
-    }
-    setDangXuLy(false);
+    Alert.alert('Làm mới', 'Bạn có chắc muốn xóa toàn bộ lịch sử chat?', [
+      { text: 'Hủy', style: 'cancel' },
+      { text: 'Xóa', style: 'destructive', onPress: async () => {
+        await xoaLichSuChat();
+        setTinNhan([{ id: Date.now().toString(), vaiTro: 'heThong', noiDung: 'Đã làm mới cuộc trò chuyện.', thoiGian: Date.now() }]);
+      }}
+    ]);
   };
 
   const khiGui = async () => {
     if (chuoiNhap.trim() === '' || dangXuLy) return;
-
+    
     const noiDungNhap = chuoiNhap.trim();
     setChuoiNhap('');
-    setDangXuLy(true);
-
-    const lichSuChat = tinNhan.slice(-5).map((tn) => ({
-      vaiTro: tn.vaiTro,
-      noiDung: tn.noiDung,
-    }));
-
-    const tinNhanNguoiDung: TinNhan = {
-      id: Date.now().toString(),
-      vaiTro: 'nguoiDung',
-      noiDung: noiDungNhap,
-      thoiGian: Date.now()
-    };
-    setTinNhan((cu) => [...cu, tinNhanNguoiDung]);
-
-    const ketQua = await phanTichCauLenh(noiDungNhap, lichSuChat);
-    await xuLyKetQuaAI(ketQua); 
+    
+    setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'nguoiDung', noiDung: noiDungNhap, thoiGian: Date.now() }]);
+    
+    socketService.sendText(noiDungNhap);
   };
 
-  // BẮT ĐẦU GHI ÂM
+  // SỬA LỖI 2: Cập nhật hàm ghi âm theo đúng API của thư viện
   const batDauGhiAm = async () => {
-    try {
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Quyền truy cập', 'Vui lòng cấp quyền micro để sử dụng tính năng này.');
-        return;
-      }
+    // Sử dụng AudioStudioModule để xin quyền
+    const { granted } = await AudioStudioModule.requestPermissionsAsync();
+    if (!granted) return Alert.alert('Lỗi', 'Cần quyền micro để ghi âm');
+    
+    player.pause(); 
 
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-
-      if (recorderState.isRecording) {
-        await audioRecorder.stop();
-      }
-
-      await audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
-      
-      setDangGhiAm(true);
-      console.log('🎙️ Bắt đầu ghi âm...');
-    } catch (err) {
-      console.error('Lỗi khi bắt đầu ghi âm:', err);
-      setDangGhiAm(false); 
-    }
+    setDangGhiAm(true);
+    
+    // Truyền cấu hình vào hàm startRecording
+    await audioRecorder.startRecording({ 
+      sampleRate: 16000,
+      channels: 1,
+      encoding: 'pcm_16bit',
+      interval: 250,
+      onAudioStream: async  (event: any) => {
+        // Chỉ gửi dữ liệu khi đang trong trạng thái ghi âm
+        if (event.data && event.data.encoded) {
+          socketService.sendAudio(event.data.encoded);
+        }
+      } 
+    });
   };
 
-  // DỪNG GHI ÂM VÀ GỬI ĐI
   const dungGhiAm = async () => {
     if (!dangGhiAm) return;
-    
     setDangGhiAm(false);
-    setDangXuLy(true);
-
-    try {
-      await audioRecorder.stop();
-      const uri = audioRecorder.uri; 
-      console.log('🎙️ File ghi âm tại:', uri);
-
-      if (uri) {
-        const tinNhanNguoiDung: TinNhan = {
-          id: Date.now().toString(),
-          vaiTro: 'nguoiDung',
-          noiDung: '🎙️ [Tin nhắn thoại]',
-          thoiGian: Date.now()
-        };
-        setTinNhan((cu) => [...cu, tinNhanNguoiDung]);
-
-        const ketQua = await phanTichAmThanh(uri);
-        await xuLyKetQuaAI(ketQua);
-      } else {
-        setTinNhan((cu) => [...cu, { 
-          id: Date.now().toString(), 
-          vaiTro: 'heThong', 
-          noiDung: '❌ Không thể lấy được file ghi âm.', 
-          thoiGian: Date.now() 
-        }]);
-        setDangXuLy(false);
-      }
-    } catch (error) {
-      console.error('Lỗi khi dừng ghi âm:', error);
-      setDangXuLy(false);
-    }
+    
+    await audioRecorder.stopRecording();
+    
+    // Gửi tín hiệu kết thúc để AI bắt đầu trả lời
+    socketService.sendAudio(""); 
   };
 
   const renderTinNhan = ({ item }: { item: TinNhan }) => {
@@ -378,6 +288,7 @@ export default function ManHinhChat() {
             onChangeText={setChuoiNhap}
             onSubmitEditing={khiGui}
             editable={!dangXuLy && !dangGhiAm}
+            multiline
           />
           
           <TouchableOpacity
