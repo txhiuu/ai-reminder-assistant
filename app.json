@@ -10,7 +10,9 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Ứng dụng cần micro để nhận lệnh giọng nói của bạn."
+        "NSMicrophoneUsageDescription": "Ứng dụng cần micro để nhận lệnh giọng nói của bạn.",
+        "NSCalendarsUsageDescription": "Ứng dụng cần truy cập lịch để đồng bộ nhắc việc.",
+        "NSFaceIDUsageDescription": "Ứng dụng cần Face ID để bảo mật thông tin của bạn."
       }
     },
     "android": {
@@ -22,8 +24,21 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "RECORD_AUDIO"
-      ]
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "WAKE_LOCK",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ],
+      "package": "com.anonymous.AiReminderApp"
     },
     "web": {
       "output": "static",
@@ -41,16 +56,46 @@
       ],
       "@react-native-community/datetimepicker",
       [
+        "@siteed/audio-studio",
+        {
+          "microphonePermission": "Cho phép $(PRODUCT_NAME) truy cập micro để đàm thoại real-time."
+        }
+      ],
+      [
         "expo-audio",
         {
           "microphonePermission": "Cho phép $(PRODUCT_NAME) truy cập micro để bạn ra lệnh bằng giọng nói."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff"
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Ứng dụng cần truy cập lịch để đồng bộ nhắc việc."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "e1d1fc4a-be3e-4a91-851e-9465e54e9934"
+      }
     }
   }
 }
