@@ -3,7 +3,6 @@
 const GEMINI_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_KEY}`;
 
-// Khai báo các Function Tools để AI biết nó có thể gọi hàm gì
 const TOOLS = [
   {
     functionDeclarations: [
@@ -42,26 +41,36 @@ const TOOLS = [
   }
 ];
 
-export class LiveSocketService {
+class LiveSocketService {
   private ws: WebSocket | null = null;
   private isSetupComplete = false;
-  private onAudioDataCallback: (base64Audio: string) => void = () => {};
-  private onTextCallback: (text: string) => void = () => {};
-  private onFunctionCallCallback: (name: string, args: any) => void = () => {};
+  private isConnecting = false;
+  private onAudioDataCallback: (base64Audio: string) => void = () => { };
+  private onTextCallback: (text: string) => void = () => { };
+  private onFunctionCallCallback: (name: string, args: any) => void = () => { };
 
-  // Khởi tạo kết nối
-  connect() {
+  connect(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        resolve();
+        return;
+      }
+
       this.ws = new WebSocket(WS_URL);
+      this.ws.binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
         console.log('🔌 Đã kết nối WebSocket Live API');
-        // Gửi gói tin Setup
         const setupMessage = {
           setup: {
-            model: "models/gemini-3.8-live", // Hoặc gemini-2.0-flash-exp nếu lỗi
-            generationConfig: { responseModalities: ["AUDIO", "TEXT"] },
-            systemInstruction: { parts: [{ text: "Bạn là trợ lý ảo AI. Hãy trả lời ngắn gọn, thân thiện bằng tiếng Việt." }] },
+            model: "models/gemini-3.8-live", 
+            generationConfig: { 
+              responseModalities: ["AUDIO"], 
+            },
+            outputAudioTranscription: {}, 
+            systemInstruction: { 
+              parts: [{ text: "Bạn là trợ lý ảo AI. Hãy trả lời ngắn gọn, thân thiện bằng tiếng Việt." }] 
+            },
             tools: TOOLS
           }
         };
@@ -69,7 +78,19 @@ export class LiveSocketService {
       };
 
       this.ws.onmessage = async (event) => {
-        const message = JSON.parse(event.data);
+        let rawData: string;
+        if (event.data instanceof ArrayBuffer) {
+          rawData = new TextDecoder('utf-8').decode(new Uint8Array(event.data));
+        } else {
+          rawData = event.data as string;
+        }
+
+        let message;
+        try {
+          message = JSON.parse(rawData);
+        } catch (e) {
+          return;
+        }
 
         if (message.setupComplete) {
           console.log('✅ Thiết lập Live API hoàn tất');
@@ -78,22 +99,27 @@ export class LiveSocketService {
           return;
         }
 
-        // Nhận âm thanh từ AI
+        if (message.error) {
+          console.error('❌ Lỗi từ Live API Server:', message.error);
+        }
+
+        // Xử lý âm thanh và văn bản AI trả về
         if (message.serverContent?.modelTurn?.parts) {
           for (const part of message.serverContent.modelTurn.parts) {
             if (part.inlineData && part.inlineData.mimeType.includes('audio')) {
               this.onAudioDataCallback(part.inlineData.data);
             }
-            if (part.text) {
-              this.onTextCallback(part.text);
-            }
           }
         }
+        
+        // Xử lý bản ghi văn bản (transcription)
+        if (message.serverContent?.outputTranscription?.text) {
+           this.onTextCallback(message.serverContent.outputTranscription.text);
+        }
 
-        // Nhận yêu cầu gọi hàm (Function Call)
+        // Xử lý yêu cầu gọi hàm
         if (message.toolCall?.functionCalls) {
           for (const call of message.toolCall.functionCalls) {
-            console.log('🛠️ AI yêu cầu gọi hàm:', call.name, call.args);
             this.onFunctionCallCallback(call.name, call.args);
           }
         }
@@ -104,57 +130,77 @@ export class LiveSocketService {
         reject(error);
       };
 
-      this.ws.onclose = () => {
-        console.log('🔌 Đã đóng kết nối WebSocket');
+      this.ws.onclose = (event) => {
+        console.log('🔌 Đã đóng kết nối WebSocket. Lý do:', event.reason);
         this.isSetupComplete = false;
+        this.ws = null;
       };
     });
   }
 
-  // Gửi âm thanh (PCM 16kHz Base64)
+  // GỬI TÍN HIỆU BẮT ĐẦU NÓI (VAD THỦ CÔNG)
+  sendActivityStart() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSetupComplete) return;
+    const message = {
+      realtimeInput: {
+        activityStart: {}
+      }
+    };
+    this.ws.send(JSON.stringify(message));
+  }
+
+  // GỬI TÍN HIỆU KẾT THÚC NÓI (VAD THỦ CÔNG)
+  sendActivityEnd() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSetupComplete) return;
+    const message = {
+      realtimeInput: {
+        activityEnd: {}
+      }
+    };
+    this.ws.send(JSON.stringify(message));
+  }
+
   sendAudio(base64PCM: string) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSetupComplete) return;
-    
     const audioMessage = {
       realtimeInput: {
-        mediaChunks: [{
-          mimeType: "audio/pcm;rate=16000",
-          data: base64PCM
-        }]
+        mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: base64PCM }]
       }
     };
     this.ws.send(JSON.stringify(audioMessage));
   }
 
-  // Gửi văn bản (Text) từ bàn phím
-  sendText(text: string) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSetupComplete) return;
+  async sendText(text: string) {
+    // Tự động kết nối lại nếu mất kết nối
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.isSetupComplete) {
+      console.log('🔄 Mất kết nối, đang tự động kết nối lại...');
+      try {
+        await this.connect();
+      } catch (e) {
+        console.error('Không thể kết nối lại:', e);
+        return; 
+      }
+    }
     
+    console.log('📤 Đang gửi văn bản:', text);
     const textMessage = {
-      clientContent: {
-        turns: [{ role: "user", parts: [{ text }] }],
-        turnComplete: true
+      realtimeInput: {
+        text: text
       }
     };
-    this.ws.send(JSON.stringify(textMessage));
+    this.ws?.send(JSON.stringify(textMessage));
   }
 
-  // Gửi kết quả sau khi App thực thi Function Call xong
   sendFunctionResponse(functionName: string, result: any) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    
     const responseMessage = {
       toolResponse: {
-        functionResponses: [{
-          name: functionName,
-          response: { result }
-        }]
+        functionResponses: [{ name: functionName, response: { result } }]
       }
     };
     this.ws.send(JSON.stringify(responseMessage));
   }
 
-  // Đăng ký các sự kiện
   onAudioData(callback: (base64Audio: string) => void) { this.onAudioDataCallback = callback; }
   onText(callback: (text: string) => void) { this.onTextCallback = callback; }
   onFunctionCall(callback: (name: string, args: any) => void) { this.onFunctionCallCallback = callback; }
@@ -166,3 +212,5 @@ export class LiveSocketService {
     }
   }
 }
+
+export const socketService = new LiveSocketService();
