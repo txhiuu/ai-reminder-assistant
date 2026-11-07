@@ -1,5 +1,5 @@
 // src/app/chat.tsx
-import { AudioStudioModule, useAudioRecorder } from '@siteed/audio-studio'; // Import AudioStudioModule
+import { AudioStudioModule, useAudioRecorder } from '@siteed/audio-studio';
 import base64 from 'base64-js';
 import { useAudioPlayer } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -8,14 +8,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { LiveSocketService } from '../services/liveSocketService';
+import { socketService } from '../services/liveSocketService';
 import { layLichSuChat, luuLichSuChat, xoaLichSuChat } from '../storage/chatStorage';
 import { layDanhSach, luuGhiChu, xoaGhiChu } from '../storage/noteStorage';
 import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
 import { TinNhan } from '../types';
 import { taoId } from '../utils/generateId';
 
-// Hàm chuyển đổi PCM 24kHz sang WAV để phát âm thanh
 function pcmToWav(pcmBase64: string, sampleRate: number = 24000): string {
   const pcmBuffer = base64.toByteArray(pcmBase64);
   const numChannels = 1;
@@ -54,30 +53,32 @@ export default function ManHinhChat() {
   const [dangXuLy, setDangXuLy] = useState(false);
   const [dangGhiAm, setDangGhiAm] = useState(false);
   
-  const socketService = useRef(new LiveSocketService()).current;
   const flatListRef = useRef<FlatList>(null);
-
-  // SỬ DỤNG HOOK USEAUDIOPLAYER CỦA EXPO-AUDIO
   const player = useAudioPlayer(); 
-
-  // SỬA LỖI 1: Khởi tạo hook mà không truyền tham số cấu hình
   const audioRecorder = useAudioRecorder();
 
-  // 1. KHỞI TẠO KẾT NỐI VÀ LẮNG NGHE SỰ KIỆN
+  const isRecordingRef = useRef(false);
+  const isStoppingRef = useRef(false);
+  const dangGopText = useRef(false);
+  const isPlayingAudioRef = useRef(false);
+
   useEffect(() => {
     const initSocket = async () => {
       try {
         await socketService.connect();
-        console.log('✅ Đã kết nối Live API');
       } catch (err) {
         Alert.alert('Lỗi', 'Không thể kết nối với Trợ lý AI.');
       }
     };
     initSocket();
 
-    // Lắng nghe âm thanh AI trả về
     socketService.onAudioData(async (base64Audio) => {
+      if (isPlayingAudioRef.current) return;
+      
       try {
+        isPlayingAudioRef.current = true;
+        setDangXuLy(false);
+        
         const wavBase64 = pcmToWav(base64Audio, 24000);
         const fileUri = FileSystem.cacheDirectory + `ai_voice_${Date.now()}.wav`;
         await FileSystem.writeAsStringAsync(fileUri, wavBase64, { encoding: FileSystem.EncodingType.Base64 });
@@ -86,18 +87,37 @@ export default function ManHinhChat() {
         player.play();
       } catch (error) { 
         console.log('Lỗi phát âm thanh:', error); 
+      } finally {
+        setTimeout(() => {
+          isPlayingAudioRef.current = false;
+        }, 500);
       }
     });
 
-    // Lắng nghe văn bản (Text) AI trả về
     socketService.onText((text) => {
-      console.log('AI nói:', text);
+      setDangXuLy(false);
+      setTinNhan(cu => {
+        const lastMsg = cu[cu.length - 1];
+        
+        if (dangGopText.current && lastMsg && lastMsg.vaiTro === 'heThong' && (Date.now() - lastMsg.thoiGian < 5000)) {
+          const updatedMsg = { ...lastMsg, noiDung: lastMsg.noiDung + " " + text, thoiGian: Date.now() };
+          return [...cu.slice(0, -1), updatedMsg];
+        } else {
+          dangGopText.current = true;
+          return [...cu, { 
+            id: taoId(),
+            vaiTro: 'heThong', 
+            noiDung: text, 
+            thoiGian: Date.now() 
+          }];
+        }
+      });
     });
 
-    // Lắng nghe yêu cầu gọi hàm (Function Call) từ AI
     socketService.onFunctionCall(async (name, args) => {
       let resultMessage = "Thành công";
       setDangXuLy(true);
+      dangGopText.current = false;
 
       try {
         if (name === 'tao_ghi_chu') {
@@ -109,7 +129,7 @@ export default function ManHinhChat() {
             ngayTao: Date.now(),
             ngayCapNhat: Date.now(),
           });
-          setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: `✅ Đã tạo ghi chú: ${args.tieuDe}`, thoiGian: Date.now() }]);
+          setTinNhan(cu => [...cu, { id: taoId(), vaiTro: 'heThong', noiDung: `✅ Đã tạo ghi chú: ${args.tieuDe}`, thoiGian: Date.now() }]);
         } 
         else if (name === 'xoa_ghi_chu') {
           const tatCaGhiChu = await layDanhSach();
@@ -118,10 +138,10 @@ export default function ManHinhChat() {
           
           if (ghiChuCanXoa.length > 0) {
             for (const ghiChu of ghiChuCanXoa) await xoaGhiChu(ghiChu.id);
-            setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: `🗑️ Đã xóa ${ghiChuCanXoa.length} ghi chú.`, thoiGian: Date.now() }]);
+            setTinNhan(cu => [...cu, { id: taoId(), vaiTro: 'heThong', noiDung: `🗑️ Đã xóa ${ghiChuCanXoa.length} ghi chú.`, thoiGian: Date.now() }]);
             resultMessage = "Đã xóa thành công";
           } else {
-            setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'heThong', noiDung: `🔍 Không tìm thấy ghi chú.`, thoiGian: Date.now() }]);
+            setTinNhan(cu => [...cu, { id: taoId(), vaiTro: 'heThong', noiDung: `🔍 Không tìm thấy ghi chú.`, thoiGian: Date.now() }]);
             resultMessage = "Không tìm thấy ghi chú để xóa";
           }
         } 
@@ -138,11 +158,10 @@ export default function ManHinhChat() {
     });
 
     return () => {
-      socketService.disconnect();
+      // socketService.disconnect();
     };
   }, []);
 
-  // 2. LOAD LỊCH SỬ CHAT VÀ TỰ ĐỘNG CUỘN
   useEffect(() => {
     const khoiTaoChat = async () => {
       const lichSu = await layLichSuChat();
@@ -150,7 +169,7 @@ export default function ManHinhChat() {
         setTinNhan(lichSu);
       } else {
         setTinNhan([{ 
-          id: '1', 
+          id: taoId(),
           vaiTro: 'heThong', 
           noiDung: 'Chào bạn! Tôi là trợ lý AI. Bạn có thể nhấn giữ nút Micro để nói hoặc nhắn tin.',
           thoiGian: Date.now()
@@ -178,14 +197,12 @@ export default function ManHinhChat() {
     scrollToBottom();
   }, [tinNhan]);
 
-  // 3. CÁC HÀM XỬ LÝ GIAO TIẾP
-
   const lamMoiChat = () => {
     Alert.alert('Làm mới', 'Bạn có chắc muốn xóa toàn bộ lịch sử chat?', [
       { text: 'Hủy', style: 'cancel' },
       { text: 'Xóa', style: 'destructive', onPress: async () => {
         await xoaLichSuChat();
-        setTinNhan([{ id: Date.now().toString(), vaiTro: 'heThong', noiDung: 'Đã làm mới cuộc trò chuyện.', thoiGian: Date.now() }]);
+        setTinNhan([{ id: taoId(), vaiTro: 'heThong', noiDung: 'Đã làm mới cuộc trò chuyện.', thoiGian: Date.now() }]);
       }}
     ]);
   };
@@ -195,45 +212,82 @@ export default function ManHinhChat() {
     
     const noiDungNhap = chuoiNhap.trim();
     setChuoiNhap('');
+    setDangXuLy(true);
+    dangGopText.current = false;
     
-    setTinNhan(cu => [...cu, { id: Date.now().toString(), vaiTro: 'nguoiDung', noiDung: noiDungNhap, thoiGian: Date.now() }]);
+    setTinNhan(cu => [...cu, { id: taoId(), vaiTro: 'nguoiDung', noiDung: noiDungNhap, thoiGian: Date.now() }]);
     
     socketService.sendText(noiDungNhap);
   };
 
-  // SỬA LỖI 2: Cập nhật hàm ghi âm theo đúng API của thư viện
   const batDauGhiAm = async () => {
-    // Sử dụng AudioStudioModule để xin quyền
-    const { granted } = await AudioStudioModule.requestPermissionsAsync();
-    if (!granted) return Alert.alert('Lỗi', 'Cần quyền micro để ghi âm');
-    
-    player.pause(); 
+    if (isRecordingRef.current || isStoppingRef.current || dangXuLy) return;
 
+    try {
+      await socketService.connect();
+    } catch (e) {
+      Alert.alert('Lỗi mạng', 'Không thể kết nối lại với Trợ lý AI.');
+      return;
+    }
+
+    const { granted } = await AudioStudioModule.requestPermissionsAsync();
+    if (!granted) {
+      return Alert.alert('Lỗi', 'Cần quyền micro để ghi âm');
+    }
+
+    isRecordingRef.current = true;
     setDangGhiAm(true);
-    
-    // Truyền cấu hình vào hàm startRecording
-    await audioRecorder.startRecording({ 
-      sampleRate: 16000,
-      channels: 1,
-      encoding: 'pcm_16bit',
-      interval: 250,
-      onAudioStream: async  (event: any) => {
-        // Chỉ gửi dữ liệu khi đang trong trạng thái ghi âm
-        if (event.data && event.data.encoded) {
-          socketService.sendAudio(event.data.encoded);
+    dangGopText.current = false;
+
+    try {
+      if (player.playing) {
+        player.pause();
+      }
+
+      // GỬI TÍN HIỆU BẮT ĐẦU NÓI (VAD THỦ CÔNG)
+      socketService.sendActivityStart();
+
+      await audioRecorder.startRecording({ 
+        sampleRate: 16000,
+        channels: 1,
+        encoding: 'pcm_16bit',
+        interval: 250,
+        autoResumeAfterInterruption: true,
+        keepAwake: true,
+        onAudioStream: async (event: any) => {
+          if (event.data && event.data.encoded) {
+            socketService.sendAudio(event.data.encoded);
+          }
         }
-      } 
-    });
+      });
+    } catch (error) {
+      console.log("Lỗi khi bắt đầu ghi âm:", error);
+      isRecordingRef.current = false;
+      setDangGhiAm(false);
+    }
   };
 
   const dungGhiAm = async () => {
-    if (!dangGhiAm) return;
+    if (!isRecordingRef.current || isStoppingRef.current) return;
+
+    isRecordingRef.current = false;
+    isStoppingRef.current = true;
     setDangGhiAm(false);
-    
-    await audioRecorder.stopRecording();
-    
-    // Gửi tín hiệu kết thúc để AI bắt đầu trả lời
-    socketService.sendAudio(""); 
+    setDangXuLy(true);
+
+    try {
+      // GỬI TÍN HIỆU KẾT THÚC NÓI (VAD THỦ CÔNG)
+      socketService.sendActivityEnd();
+
+      await audioRecorder.stopRecording();
+    } catch (error) {
+      console.log("Lỗi khi dừng ghi âm:", error);
+    } finally {
+      setTimeout(() => {
+        isStoppingRef.current = false;
+        setDangXuLy(false);
+      }, 300);
+    }
   };
 
   const renderTinNhan = ({ item }: { item: TinNhan }) => {
