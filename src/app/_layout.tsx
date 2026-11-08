@@ -1,18 +1,19 @@
-import { MAU_SAC } from '@/theme'
-import { Stack } from 'expo-router'
-import { StatusBar } from 'expo-status-bar'
+import { MAU_SAC } from '@/theme';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React from 'react';
 
 export default function LayoutGoc() {
   return (
     <>
-      <StatusBar style='dark' />
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: MAU_SAC.nen },
         }}
       >
-        <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="add-note"
           options={{
@@ -20,11 +21,7 @@ export default function LayoutGoc() {
             animation: 'slide_from_bottom',
           }}
         />
-        <Stack.Screen
-          name="chat"
-          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-        />
       </Stack>
     </>
-  )
+  );
 }
