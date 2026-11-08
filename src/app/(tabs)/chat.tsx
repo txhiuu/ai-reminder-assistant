@@ -4,7 +4,7 @@ import { useAudioPlayer } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ElementRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,7 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconAI, IconGui, IconLamMoi, IconMicro, IconTick, IconXoa } from '../../components/Icons';
-import { socketService } from '../../services/liveSocketService';
+import { socketService, type TrangThaiKetNoi } from '../../services/liveSocketService';
 import { layLichSuChat, luuLichSuChat, xoaLichSuChat } from '../../storage/chatStorage';
 import { layDanhSach, luuGhiChu, xoaGhiChu } from '../../storage/noteStorage';
 import { DO_BO_GOC, KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../../theme';
@@ -60,6 +60,8 @@ function pcmToWav(pcmBase64: string, sampleRate: number = 24000): string {
   return base64.fromByteArray(new Uint8Array(buffer));
 }
 
+const GOI_Y_NHANH = ['Nhắc tôi chiều nay', 'Tìm ghi chú', 'Hôm nay có gì?'];
+
 export default function ManHinhChat() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -68,8 +70,10 @@ export default function ManHinhChat() {
   const [dangXuLy, setDangXuLy] = useState(false);
   const [dangGhiAm, setDangGhiAm] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [trangThaiKetNoi, setTrangThaiKetNoi] = useState<TrangThaiKetNoi>('dangKetNoi');
 
   const flatListRef = useRef<FlatList>(null);
+  const inputRef = useRef<ElementRef<typeof TextInput>>(null);
   const player = useAudioPlayer();
   const audioRecorder = useAudioRecorder();
 
@@ -89,6 +93,7 @@ export default function ManHinhChat() {
     return () => { show.remove(); hide.remove(); };
   }, []);
   useEffect(() => {
+    const ngungTheoDoiKetNoi = socketService.onConnectionState(setTrangThaiKetNoi);
     const initSocket = async () => {
       try {
         await socketService.connect();
@@ -161,8 +166,9 @@ export default function ManHinhChat() {
 
       try {
         if (name === 'tao_ghi_chu') {
+          const ghiChuId = taoId();
           await luuGhiChu({
-            id: taoId(),
+            id: ghiChuId,
             tieuDe: args.tieuDe,
             noiDung: args.noiDung || '',
             thoiGianNhac: args.thoiGianNhac || undefined,
@@ -174,8 +180,9 @@ export default function ManHinhChat() {
             {
               id: taoId(),
               vaiTro: 'heThong',
-              noiDung: `✅ Đã tạo ghi chú: ${args.tieuDe}`,
+              noiDung: '✅ Đã tạo ghi chú: ' + args.tieuDe,
               thoiGian: Date.now(),
+              ghiChuId,
             },
           ]);
         } else if (name === 'xoa_ghi_chu') {
@@ -222,6 +229,7 @@ export default function ManHinhChat() {
     });
 
     return () => {
+      ngungTheoDoiKetNoi();
       // socketService.disconnect();
     };
   }, []);
@@ -396,9 +404,11 @@ export default function ManHinhChat() {
           </View>
           <TouchableOpacity
             style={kieu.nutXemNgay}
-            onPress={() => router.replace('/')}
+            onPress={() => item.ghiChuId
+              ? router.push({ pathname: '/add-note', params: { id: item.ghiChuId } })
+              : router.replace({ pathname: '/', params: { search: tenGhiChu } })}
           >
-            <Text style={kieu.chuNutXemNgay}>Xem trong danh sách →</Text>
+            <Text style={kieu.chuNutXemNgay}>Mở ghi chú vừa tạo →</Text>
           </TouchableOpacity>
         </View>
       );
@@ -437,17 +447,46 @@ export default function ManHinhChat() {
     );
   };
 
+  const trangThaiHienThi = dangGhiAm
+    ? { nhan: 'Đang nghe', mau: '#DC2626', nen: '#FEF2F2' }
+    : dangXuLy
+      ? { nhan: 'Đang xử lý', mau: MAU_SAC.nhanManh, nen: MAU_SAC.nhanManhNhat }
+      : trangThaiKetNoi === 'sanSang'
+        ? { nhan: 'Sẵn sàng', mau: '#059669', nen: '#ECFDF5' }
+        : trangThaiKetNoi === 'dangKetNoi'
+          ? { nhan: 'Đang kết nối', mau: '#D97706', nen: '#FFFBEB' }
+          : { nhan: 'Mất kết nối', mau: '#DC2626', nen: '#FEF2F2' };
+
+  const hienGoiYNhanh =
+    tinNhan.length > 0 && !tinNhan.some((message) => message.vaiTro === 'nguoiDung');
+
+  const chonGoiYNhanh = (goiY: string) => {
+    setChuoiNhap(goiY);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
   return (
     <SafeAreaView style={kieu.khungChua} edges={['top', 'left', 'right']}>
       {/* Trên Android dùng paddingBottom động theo keyboardHeight */}
       <View style={[{ flex: 1 }, Platform.OS === 'android' && { paddingBottom: keyboardHeight }]}>
-        {/* Header hiện đại */}
+        {/* Header trợ lý và trạng thái kết nối */}
         <View style={kieu.thanhTieuDe}>
           <View style={kieu.khoiTieuDe}>
-            <View style={kieu.chamTrucTuyen} />
-            <View>
-              <Text style={KIEU_CHU.tieuDe}>Trợ lý AI Live</Text>
-              <Text style={kieu.phuDeTrucTuyen}>Đàm thoại thời gian thực</Text>
+            <LinearGradient
+              colors={['#6366F1', '#8B5CF6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={kieu.bieuTuongAI}
+            >
+              <IconAI size={21} color="#FFFFFF" />
+            </LinearGradient>
+            <View style={kieu.thongTinTieuDe}>
+              <Text style={KIEU_CHU.tieuDe}>Trợ lý AI</Text>
+              <View style={[kieu.pillTrangThai, { backgroundColor: trangThaiHienThi.nen }]}>
+                <View style={[kieu.chamTrangThai, { backgroundColor: trangThaiHienThi.mau }]} />
+                <Text style={[kieu.chuTrangThai, { color: trangThaiHienThi.mau }]}>
+                  {trangThaiHienThi.nhan}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -460,7 +499,6 @@ export default function ManHinhChat() {
             <Text style={kieu.chuNutLamMoi}>Làm mới</Text>
           </TouchableOpacity>
         </View>
-
         {/* Danh sách tin nhắn */}
         <FlatList
           ref={flatListRef}
@@ -468,6 +506,25 @@ export default function ManHinhChat() {
           data={tinNhan}
           keyExtractor={(item) => item.id}
           renderItem={renderTinNhan}
+          ListFooterComponent={
+            hienGoiYNhanh ? (
+              <View style={kieu.khoiGoiYNhanh}>
+                <Text style={kieu.nhanGoiY}>Bạn có thể thử</Text>
+                <View style={kieu.dongGoiY}>
+                  {GOI_Y_NHANH.map((goiY) => (
+                    <TouchableOpacity
+                      key={goiY}
+                      style={kieu.chipGoiY}
+                      onPress={() => chonGoiYNhanh(goiY)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={kieu.chuGoiY}>{goiY}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : undefined
+          }
           contentContainerStyle={kieu.danhSachTinNhan}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={scrollToBottom}
@@ -479,7 +536,7 @@ export default function ManHinhChat() {
         {dangXuLy && (
           <View style={kieu.khungDangXuLy}>
             <ActivityIndicator size="small" color={MAU_SAC.nhanManh} />
-            <Text style={kieu.chuDangXuLy}>AI đang suy nghĩ và phản hồi...</Text>
+            <Text style={kieu.chuDangXuLy}>Đang xử lý yêu cầu...</Text>
           </View>
         )}
 
@@ -487,13 +544,14 @@ export default function ManHinhChat() {
         {dangGhiAm && (
           <View style={kieu.bannerGhiAm}>
             <View style={kieu.chamDoGhiAm} />
-            <Text style={kieu.chuBannerGhiAm}>Đang lắng nghe... Thả tay để gửi câu lệnh</Text>
+            <Text style={kieu.chuBannerGhiAm}>Đang nghe... Thả tay để gửi câu lệnh</Text>
           </View>
         )}
 
         {/* Khung nhập văn bản & nút Micro */}
         <View style={kieu.khungNhap}>
           <TextInput
+            ref={inputRef}
             style={kieu.oNhap}
             placeholder="Nhập câu lệnh hoặc giữ Micro..."
             placeholderTextColor={MAU_SAC.chuMo}
@@ -569,18 +627,36 @@ const kieu = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  chamTrucTuyen: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#10B981',
-    marginRight: 10,
+  bieuTuongAI: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  phuDeTrucTuyen: {
-    fontSize: 12,
-    color: MAU_SAC.chuPhu,
+  thongTinTieuDe: {
+    marginLeft: KHOANG_CACH.trung,
   },
-  nutLamMoi: {
+  pillTrangThai: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: DO_BO_GOC.tron,
+  },
+  chamTrangThai: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
+  },
+  chuTrangThai: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+  },  nutLamMoi: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
@@ -594,7 +670,35 @@ const kieu = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 5,
   },
-  danhSachTinNhan: {
+  khoiGoiYNhanh: {
+    paddingHorizontal: KHOANG_CACH.lon,
+    paddingBottom: KHOANG_CACH.trung,
+  },
+  nhanGoiY: {
+    color: MAU_SAC.chuPhu,
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: KHOANG_CACH.vua,
+  },
+  dongGoiY: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  chipGoiY: {
+    marginRight: KHOANG_CACH.vua,
+    marginBottom: KHOANG_CACH.vua,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: DO_BO_GOC.tron,
+    backgroundColor: MAU_SAC.beMat,
+    borderWidth: 1,
+    borderColor: MAU_SAC.vien,
+  },
+  chuGoiY: {
+    color: MAU_SAC.nhanManhToi,
+    fontSize: 12,
+    fontWeight: '600',
+  },  danhSachTinNhan: {
     padding: KHOANG_CACH.lon,
     paddingBottom: 24,
   },
