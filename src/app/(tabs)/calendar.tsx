@@ -151,42 +151,42 @@ export default function ManHinhLich() {
   const moGhiChu = (ghiChu: GhiChu) =>
     router.push({ pathname: '/add-note', params: { id: ghiChu.id } });
 
-  const renderTheNhac = (ghiChu: GhiChu, index: number) => {
+  const renderTheNhac = (ghiChu: GhiChu, laCuoi: boolean) => {
     const khoaMau = Array.from(ghiChu.id).reduce((tong, kyTu) => tong + kyTu.charCodeAt(0), 0);
     const mau = MAU_THE_NHAC[khoaMau % MAU_THE_NHAC.length];
     const gioNhac = dayjs(ghiChu.thoiGianNhac).format('HH:mm');
 
     return (
-      <TouchableOpacity
-        key={ghiChu.id}
-        activeOpacity={0.82}
-        accessibilityRole="button"
-        accessibilityLabel={ghiChu.tieuDe + ', ' + gioNhac}
-        onPress={() => moGhiChu(ghiChu)}
-        onLongPress={() => xacNhanXoa(ghiChu)}
-        style={[kieu.theNhac, { backgroundColor: mau.nen }]}
-      >
-        <View style={[kieu.vachMau, { backgroundColor: mau.diem }]} />
-        <View style={kieu.noiDungThe}>
-          <View style={kieu.hangThongTinThe}>
+      <View key={ghiChu.id} style={kieu.dongTimeline}>
+        <View style={kieu.trucThoiGian}>
+          {!laCuoi ? <View style={kieu.duongThoiGian} /> : null}
+          <Text style={kieu.nhanGioTruc}>{gioNhac}</Text>
+          <View style={[kieu.chamThoiGian, { backgroundColor: mau.diem }]} />
+        </View>
+
+        <TouchableOpacity
+          activeOpacity={0.82}
+          accessibilityRole="button"
+          accessibilityLabel={ghiChu.tieuDe + ', nhắc lúc ' + gioNhac}
+          onPress={() => moGhiChu(ghiChu)}
+          onLongPress={() => xacNhanXoa(ghiChu)}
+          style={[kieu.theNhac, { backgroundColor: mau.nen }]}
+        >
+          <View style={[kieu.vachMau, { backgroundColor: mau.diem }]} />
+          <View style={kieu.noiDungThe}>
             <Text style={[kieu.tieuDeNhac, { color: mau.chu }]} numberOfLines={1}>
               {ghiChu.tieuDe || 'Nhắc việc'}
             </Text>
-            <View style={kieu.nhanGio}>
-              <IconDongHo size={13} color={mau.chu} />
-              <Text style={[kieu.gioNhac, { color: mau.chu }]}>{gioNhac}</Text>
-            </View>
+            {ghiChu.noiDung ? (
+              <Text style={kieu.moTaNhac} numberOfLines={2}>
+                {ghiChu.noiDung}
+              </Text>
+            ) : null}
           </View>
-          {ghiChu.noiDung ? (
-            <Text style={kieu.moTaNhac} numberOfLines={2}>
-              {ghiChu.noiDung}
-            </Text>
-          ) : null}
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
     );
   };
-
   const renderNhomNgay = (ngay: Dayjs, ghiChu: GhiChu[]) => {
     const laHomNay = ngay.isSame(dayjs(), 'day');
     const tenThu = laHomNay ? 'Hôm nay' : vietHoaChuDau(ngay.format('dddd'));
@@ -206,7 +206,7 @@ export default function ManHinhLich() {
             {ghiChu.length} nhắc việc
           </Text>
         </View>
-        {ghiChu.map((muc, index) => renderTheNhac(muc, index))}
+        {ghiChu.map((muc, index) => renderTheNhac(muc, index === ghiChu.length - 1))}
       </View>
     );
   };
@@ -766,10 +766,43 @@ const kieu = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
   },
+  dongTimeline: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginBottom: KHOANG_CACH.trung,
+  },
+  trucThoiGian: {
+    width: 58,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  nhanGioTruc: {
+    color: MAU_SAC.chuPhu,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '700',
+  },
+  duongThoiGian: {
+    position: 'absolute',
+    top: 25,
+    bottom: -37,
+    width: 2,
+    borderRadius: 1,
+    backgroundColor: '#CBD5E1',
+  },
+  chamThoiGian: {
+    zIndex: 1,
+    width: 10,
+    height: 10,
+    marginTop: 8,
+    borderRadius: DO_BO_GOC.tron,
+    borderWidth: 2,
+    borderColor: MAU_SAC.nen,
+  },
   theNhac: {
+    flex: 1,
     flexDirection: 'row',
     overflow: 'hidden',
-    marginBottom: KHOANG_CACH.vua,
     borderRadius: DO_BO_GOC.trung,
   },
   vachMau: {
@@ -780,25 +813,11 @@ const kieu = StyleSheet.create({
     paddingHorizontal: KHOANG_CACH.trung,
     paddingVertical: KHOANG_CACH.trung,
   },
-  hangThongTinThe: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   tieuDeNhac: {
     flex: 1,
     marginRight: KHOANG_CACH.vua,
     fontSize: 14,
     fontWeight: '700',
-  },
-  nhanGio: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  gioNhac: {
-    fontSize: 11,
-    fontWeight: '700',
-    marginLeft: 4,
   },
   moTaNhac: {
     color: MAU_SAC.chuPhu,
