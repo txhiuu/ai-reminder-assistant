@@ -1,12 +1,24 @@
 import DateTimePicker, { DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
 import dayjs from 'dayjs';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { IconDong, IconDongHo, IconTick } from '../components/Icons';
 import { CHU } from '../constants/vi';
 import { layTheoId, luuGhiChu } from '../storage/noteStorage';
-import { KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
+import { DO_BO_GOC, KHOANG_CACH, KIEU_CHU, MAU_SAC } from '../theme';
 import { GhiChu } from '../types';
 import { taoId } from '../utils/generateId';
 
@@ -21,6 +33,27 @@ export default function ManHinhThemGhiChu() {
   const [dangLuu, setDangLuu] = useState(false);
 
   const [cheDoPicker, setCheDoPicker] = useState<'date' | 'time' | null>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardOffset(e.endCoordinates.height);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardOffset(0);
+      }
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (dangSua && id) {
@@ -46,14 +79,12 @@ export default function ManHinhThemGhiChu() {
     if (ngayDuocChon) {
       if (Platform.OS === 'ios') {
         setNgayNhac(ngayDuocChon);
-      } 
-      else {
+      } else {
         if (cheDoPicker === 'date') {
           const ngayDaChon = ngayDuocChon;
           setNgayNhac(ngayDaChon);
           setCheDoPicker('time');
-        } 
-        else if (cheDoPicker === 'time') {
+        } else if (cheDoPicker === 'time') {
           const ngayHienTai = ngayNhac || new Date();
           const ngayGioCuoiCung = new Date(
             ngayHienTai.getFullYear(),
@@ -71,14 +102,31 @@ export default function ManHinhThemGhiChu() {
   const moPicker = () => {
     if (Platform.OS === 'ios') {
       setCheDoPicker('datetime' as any);
-    }
-    else {
+    } else {
       setCheDoPicker('date');
     }
   };
 
   const xoaThoiGian = () => {
     setNgayNhac(null);
+  };
+
+  // Các nút chọn nhanh thời gian tiện lợi
+  const datNhanhThoiGian = (loai: 'motGio' | 'toiNay' | 'sangMai' | 'chieuMai') => {
+    const bayGio = dayjs();
+    let thoiGianMoi = bayGio;
+
+    if (loai === 'motGio') {
+      thoiGianMoi = bayGio.add(1, 'hour').minute(0).second(0);
+    } else if (loai === 'toiNay') {
+      thoiGianMoi = bayGio.hour(20).minute(0).second(0);
+    } else if (loai === 'sangMai') {
+      thoiGianMoi = bayGio.add(1, 'day').hour(8).minute(0).second(0);
+    } else if (loai === 'chieuMai') {
+      thoiGianMoi = bayGio.add(1, 'day').hour(15).minute(0).second(0);
+    }
+
+    setNgayNhac(thoiGianMoi.toDate());
   };
 
   const khiBamLuu = async () => {
@@ -113,59 +161,118 @@ export default function ManHinhThemGhiChu() {
   return (
     <SafeAreaView style={kieu.khungChua}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={[
+          { flex: 1 },
+          Platform.OS === 'android' && keyboardOffset > 0 && { paddingBottom: keyboardOffset },
+        ]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        {/* Header Modal */}
         <View style={kieu.thanhTieuDe}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={kieu.nutHuy}>{CHU.themGhiChu.nutHuy}</Text>
+          <TouchableOpacity onPress={() => router.back()} style={kieu.nutHuy}>
+            <IconDong size={20} color={MAU_SAC.chuPhu} />
+            <Text style={kieu.chuNutHuy}>{CHU.themGhiChu.nutHuy}</Text>
           </TouchableOpacity>
+
           <Text style={KIEU_CHU.tieuDe}>
             {dangSua ? CHU.themGhiChu.tieuDeSua : CHU.themGhiChu.tieuDeMoi}
           </Text>
-          <TouchableOpacity onPress={khiBamLuu} disabled={dangLuu}>
-            <Text style={[kieu.nutLuu, dangLuu && kieu.nutLuuVoHieu]}>
-              {CHU.themGhiChu.nutLuu}
-            </Text>
+
+          <TouchableOpacity
+            style={[kieu.nutLuu, dangLuu && kieu.nutLuuVoHieu]}
+            onPress={khiBamLuu}
+            disabled={dangLuu}
+          >
+            <IconTick size={16} color="#FFFFFF" />
+            <Text style={kieu.chuNutLuu}>{CHU.themGhiChu.nutLuu}</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView
           style={kieu.than}
-          contentContainerStyle={kieu.noiDungThan}
+          contentContainerStyle={[
+            kieu.noiDungThan,
+            Platform.OS === 'android' && keyboardOffset > 0 && { paddingBottom: keyboardOffset + 40 },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Ô nhập tiêu đề */}
           <TextInput
             style={kieu.oTieuDe}
             placeholder={CHU.themGhiChu.goiYTieuDe}
-            placeholderTextColor={MAU_SAC.chuPhu}
+            placeholderTextColor={MAU_SAC.chuMo}
             value={tieuDe}
             onChangeText={setTieuDe}
             autoFocus={!dangSua}
           />
+
+          {/* Ô nhập nội dung */}
           <TextInput
             style={kieu.oNoiDung}
             placeholder={CHU.themGhiChu.goiYNoiDung}
-            placeholderTextColor={MAU_SAC.chuPhu}
+            placeholderTextColor={MAU_SAC.chuMo}
             value={noiDung}
             onChangeText={setNoiDung}
             multiline
             textAlignVertical="top"
           />
 
+          {/* Khu vực Hẹn giờ nhắc việc */}
           <View style={kieu.khungThoiGian}>
-            <Text style={kieu.nhanThoiGian}>Thời gian nhắc việc</Text>
+            <View style={kieu.hangNhanThoiGian}>
+              <IconDongHo size={18} color={MAU_SAC.nhanManh} />
+              <Text style={kieu.nhanThoiGian}>Thời gian nhắc việc</Text>
+            </View>
+
+            {/* Chip chọn nhanh */}
+            <View style={kieu.hangChipNhanh}>
+              <TouchableOpacity
+                style={kieu.chipNhanh}
+                onPress={() => datNhanhThoiGian('motGio')}
+              >
+                <Text style={kieu.chuChipNhanh}>+1 Giờ nữa</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={kieu.chipNhanh}
+                onPress={() => datNhanhThoiGian('toiNay')}
+              >
+                <Text style={kieu.chuChipNhanh}>Tối nay (20:00)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={kieu.chipNhanh}
+                onPress={() => datNhanhThoiGian('sangMai')}
+              >
+                <Text style={kieu.chuChipNhanh}>Sáng mai (08:00)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={kieu.chipNhanh}
+                onPress={() => datNhanhThoiGian('chieuMai')}
+              >
+                <Text style={kieu.chuChipNhanh}>Chiều mai (15:00)</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Ô hiển thị & mở bộ chọn tùy chỉnh */}
             <View style={kieu.hangThoiGian}>
               <TouchableOpacity
-                style={kieu.nutChonNgay}
+                style={[kieu.nutChonNgay, ngayNhac ? kieu.nutChonNgayDaChon : null]}
                 onPress={moPicker}
               >
-                <Text style={kieu.chuNutChonNgay}>
+                <Text
+                  style={[
+                    kieu.chuNutChonNgay,
+                    ngayNhac ? kieu.chuDaChonNgay : null,
+                  ]}
+                >
                   {ngayNhac
-                    ? dayjs(ngayNhac).format('HH:mm - DD/MM/YYYY')
-                    : 'Chưa chọn thời gian'}
+                    ? `⏰ ${dayjs(ngayNhac).format('HH:mm - DD/MM/YYYY')}`
+                    : '📅 Chọn ngày & giờ cụ thể...'}
                 </Text>
               </TouchableOpacity>
+
               {ngayNhac && (
                 <TouchableOpacity style={kieu.nutXoaNgay} onPress={xoaThoiGian}>
                   <Text style={kieu.chuNutXoaNgay}>Xóa</Text>
@@ -190,46 +297,112 @@ export default function ManHinhThemGhiChu() {
 }
 
 const kieu = StyleSheet.create({
-  khungChua: { flex: 1, backgroundColor: MAU_SAC.nen },
+  khungChua: {
+    flex: 1,
+    backgroundColor: MAU_SAC.nen,
+  },
   thanhTieuDe: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: KHOANG_CACH.lon,
     paddingVertical: KHOANG_CACH.trung,
+    backgroundColor: MAU_SAC.beMat,
     borderBottomWidth: 1,
     borderBottomColor: MAU_SAC.vien,
   },
-  nutHuy: { fontSize: 16, color: MAU_SAC.nhanManh },
-  nutLuu: { fontSize: 16, color: MAU_SAC.nhanManh, fontWeight: '600' },
-  nutLuuVoHieu: { opacity: 0.4 },
-  than: { flex: 1 },
-  noiDungThan: { padding: KHOANG_CACH.lon },
+  nutHuy: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  chuNutHuy: {
+    fontSize: 15,
+    color: MAU_SAC.chuPhu,
+    marginLeft: 4,
+  },
+  nutLuu: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: MAU_SAC.nhanManh,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: DO_BO_GOC.tron,
+  },
+  nutLuuVoHieu: {
+    opacity: 0.4,
+  },
+  chuNutLuu: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  than: {
+    flex: 1,
+  },
+  noiDungThan: {
+    padding: KHOANG_CACH.lon,
+  },
   oTieuDe: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     color: MAU_SAC.chuChinh,
-    paddingVertical: KHOANG_CACH.vua,
-    borderBottomWidth: 1,
-    borderBottomColor: MAU_SAC.vien,
+    backgroundColor: MAU_SAC.beMat,
+    paddingHorizontal: KHOANG_CACH.trung,
+    paddingVertical: 14,
+    borderRadius: DO_BO_GOC.vua,
+    borderWidth: 1,
+    borderColor: MAU_SAC.vien,
   },
   oNoiDung: {
-    fontSize: 16,
+    fontSize: 15,
     color: MAU_SAC.chuChinh,
-    lineHeight: 24,
-    paddingVertical: KHOANG_CACH.trung,
-    minHeight: 150,
+    lineHeight: 22,
+    backgroundColor: MAU_SAC.beMat,
+    paddingHorizontal: KHOANG_CACH.trung,
+    paddingVertical: 14,
+    borderRadius: DO_BO_GOC.vua,
+    borderWidth: 1,
+    borderColor: MAU_SAC.vien,
+    marginTop: KHOANG_CACH.trung,
+    minHeight: 140,
   },
   khungThoiGian: {
-    marginTop: KHOANG_CACH.trung,
-    paddingTop: KHOANG_CACH.trung,
-    borderTopWidth: 1,
-    borderTopColor: MAU_SAC.vien,
+    marginTop: KHOANG_CACH.lon,
+    backgroundColor: MAU_SAC.beMat,
+    padding: KHOANG_CACH.trung,
+    borderRadius: DO_BO_GOC.trung,
+    borderWidth: 1,
+    borderColor: MAU_SAC.vien,
+  },
+  hangNhanThoiGian: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: KHOANG_CACH.vua + 2,
   },
   nhanThoiGian: {
-    ...KIEU_CHU.chuThich,
-    marginBottom: KHOANG_CACH.vua,
+    fontSize: 14,
+    fontWeight: '700',
+    color: MAU_SAC.chuChinh,
+    marginLeft: 6,
+  },
+  hangChipNhanh: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: KHOANG_CACH.trung,
+  },
+  chipNhanh: {
+    backgroundColor: MAU_SAC.nhanManhNhat,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: DO_BO_GOC.tron,
+  },
+  chuChipNhanh: {
+    fontSize: 12,
     fontWeight: '600',
+    color: MAU_SAC.nhanManh,
   },
   hangThoiGian: {
     flexDirection: 'row',
@@ -238,14 +411,35 @@ const kieu = StyleSheet.create({
   },
   nutChonNgay: {
     flex: 1,
-    paddingVertical: KHOANG_CACH.trung,
+    paddingVertical: 12,
     paddingHorizontal: KHOANG_CACH.trung,
-    backgroundColor: MAU_SAC.beMat,
+    backgroundColor: MAU_SAC.nen,
     borderWidth: 1,
     borderColor: MAU_SAC.vien,
-    borderRadius: 8,
+    borderRadius: DO_BO_GOC.vua,
   },
-  chuNutChonNgay: { fontSize: 16, color: MAU_SAC.chuChinh },
-  nutXoaNgay: { marginLeft: KHOANG_CACH.vua, padding: KHOANG_CACH.vua },
-  chuNutXoaNgay: { color: MAU_SAC.nguyHiem, fontSize: 14, fontWeight: '500' },
+  nutChonNgayDaChon: {
+    backgroundColor: MAU_SAC.nhanManhNhat,
+    borderColor: '#C7D2FE',
+  },
+  chuNutChonNgay: {
+    fontSize: 14,
+    color: MAU_SAC.chuPhu,
+  },
+  chuDaChonNgay: {
+    color: MAU_SAC.nhanManh,
+    fontWeight: '600',
+  },
+  nutXoaNgay: {
+    marginLeft: KHOANG_CACH.vua,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: MAU_SAC.nguyHiemNhat,
+    borderRadius: DO_BO_GOC.vua,
+  },
+  chuNutXoaNgay: {
+    color: MAU_SAC.nguyHiem,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });
