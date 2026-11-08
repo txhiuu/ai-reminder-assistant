@@ -1,6 +1,8 @@
 // src/services/liveSocketService.ts
 
 const GEMINI_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+export type TrangThaiKetNoi = 'dangKetNoi' | 'sanSang' | 'matKetNoi';
+
 const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_KEY}`;
 
 const TOOLS = [
@@ -45,6 +47,7 @@ class LiveSocketService {
   private ws: WebSocket | null = null;
   private isSetupComplete = false;
   private isConnecting = false;
+  private onConnectionStateCallback: (status: TrangThaiKetNoi) => void = () => { };
   private onAudioDataCallback: (base64Audio: string) => void = () => { };
   private onTextCallback: (text: string) => void = () => { };
   private onFunctionCallCallback: (name: string, args: any) => void = () => { };
@@ -52,10 +55,13 @@ class LiveSocketService {
   connect(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.onConnectionStateCallback(this.isSetupComplete ? 'sanSang' : 'dangKetNoi');
         resolve();
         return;
       }
 
+      this.isConnecting = true;
+      this.onConnectionStateCallback('dangKetNoi');
       this.ws = new WebSocket(WS_URL);
       this.ws.binaryType = 'arraybuffer';
 
@@ -95,12 +101,18 @@ class LiveSocketService {
         if (message.setupComplete) {
           console.log('✅ Thiết lập Live API hoàn tất');
           this.isSetupComplete = true;
+          this.isConnecting = false;
+          this.onConnectionStateCallback('sanSang');
           resolve();
           return;
         }
 
         if (message.error) {
           console.error('❌ Lỗi từ Live API Server:', message.error);
+          this.isSetupComplete = false;
+          this.isConnecting = false;
+          this.onConnectionStateCallback('matKetNoi');
+          reject(new Error('Live API connection failed'));
         }
 
         // Xử lý âm thanh và văn bản AI trả về
@@ -127,12 +139,16 @@ class LiveSocketService {
 
       this.ws.onerror = (error) => {
         console.error('❌ Lỗi WebSocket:', error);
+        this.isConnecting = false;
+        this.onConnectionStateCallback('matKetNoi');
         reject(error);
       };
 
       this.ws.onclose = (event) => {
         console.log('🔌 Đã đóng kết nối WebSocket. Lý do:', event.reason);
         this.isSetupComplete = false;
+        this.isConnecting = false;
+        this.onConnectionStateCallback('matKetNoi');
         this.ws = null;
       };
     });
@@ -201,6 +217,16 @@ class LiveSocketService {
     this.ws.send(JSON.stringify(responseMessage));
   }
 
+  onConnectionState(callback: (status: TrangThaiKetNoi) => void) {
+    this.onConnectionStateCallback = callback;
+    callback(this.isSetupComplete ? 'sanSang' : this.isConnecting ? 'dangKetNoi' : 'matKetNoi');
+    return () => {
+      if (this.onConnectionStateCallback === callback) {
+        this.onConnectionStateCallback = () => { };
+      }
+    };
+  }
+
   onAudioData(callback: (base64Audio: string) => void) { this.onAudioDataCallback = callback; }
   onText(callback: (text: string) => void) { this.onTextCallback = callback; }
   onFunctionCall(callback: (name: string, args: any) => void) { this.onFunctionCallCallback = callback; }
@@ -208,6 +234,9 @@ class LiveSocketService {
   disconnect() {
     if (this.ws) {
       this.ws.close();
+      this.isSetupComplete = false;
+      this.isConnecting = false;
+      this.onConnectionStateCallback('matKetNoi');
       this.ws = null;
     }
   }
