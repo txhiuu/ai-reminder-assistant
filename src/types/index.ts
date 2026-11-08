@@ -11,5 +11,6 @@ export interface TinNhan {
   id: string;
   vaiTro: 'nguoiDung' | 'heThong';
   noiDung: string;
-  thoiGian: number; 
+  thoiGian: number;
+  ghiChuId?: string;
 }
