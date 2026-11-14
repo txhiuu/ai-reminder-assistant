@@ -1,56 +1,162 @@
-# Welcome to your Expo app 👋
+# 🤖 AI Reminder Assistant - Trợ lý Ảo AI Thông Minh
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![Expo](https://img.shields.io/badge/Expo-1B1F23?style=for-the-badge&logo=expo&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+![Firebase](https://img.shields.io/badge/firebase-ffca28?style=for-the-badge&logo=firebase&logoColor=black)
+![Gemini](https://img.shields.io/badge/Gemini_Live_API-4285F4?style=for-the-badge&logo=google&logoColor=white)
 
-## Get started
+**AI Reminder Assistant** là một ứng dụng quản lý công việc và nhắc việc thế hệ mới, kết hợp sức mạnh của **Trí tuệ Nhân tạo (Gemini Live API)** và **Giao diện Lịch biểu Thông minh (Smart Timeline)**. Ứng dụng cho phép người dùng tương tác với trợ lý ảo bằng giọng nói thời gian thực (Real-time Voice AI), tự động trích xuất thông tin và tạo lịch nhắc việc một cách dễ dàng.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## 📑 Mục lục
+- [Tính năng nổi bật](#-tính-năng-nổi-bật)
+- [Kiến trúc & Công nghệ](#-kiến-trúc--công-nghệ)
+- [Giao diện ứng dụng](#-giao-diện-ứng-dụng)
+- [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
+- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
+- [Hướng dẫn cài đặt & Chạy dự án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
+- [Giấy phép](#-giấy-phép)
 
-2. Start the app
+---
 
-   ```bash
-   npx expo start
-   ```
+## ✨ Tính năng nổi bật
 
-In the output, you'll find options to open the app in a
+| Tính năng | Mô tả chi tiết |
+| :--- | :--- |
+| 🎙️ **Voice AI Thời gian thực** | Giao tiếp với AI bằng giọng nói với độ trễ cực thấp nhờ giao thức WebSocket của **Gemini Live API**. Hỗ trợ phát hiện giọng nói (VAD) và tự động chuyển đổi giọng nói thành văn bản (Transcription). |
+| 🧠 **Xử lý Đa ý định (Multi-intent)** | AI có khả năng hiểu và thực thi nhiều lệnh cùng lúc (VD: *"Nhắc tôi họp lúc 3h chiều và xóa ghi chú đi chợ"*). |
+| 📅 **Smart Timeline (Lịch biểu)** | Tích hợp màn hình Lịch tháng trực quan. Các ngày có lịch hẹn sẽ được đánh dấu. Dễ dàng theo dõi công việc theo từng ngày. |
+| 💬 **Trí nhớ Hội thoại** | Lưu trữ lịch sử chat thông minh, tự động gộp các đoạn văn bản nhỏ và tự động reset sau 30 phút để tránh quá tải ngữ cảnh. |
+| ⚡ **Cơ chế Fallback (Dự phòng)** | Tự động chuyển đổi linh hoạt giữa các Model AI (Gemini/Groq) để đảm bảo ứng dụng không bao giờ bị gián đoạn khi server quá tải. |
+| 🔒 **Bảo mật & Đồng bộ** | Dữ liệu ghi chú được đồng bộ hóa thời gian thực trên nền tảng đám mây (Firebase Firestore). API Key được bảo mật qua biến môi trường. |
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🏗 Kiến trúc & Công nghệ
 
-## Get a fresh project
+Dự án được xây dựng với kiến trúc hiện đại, tối ưu hóa cho trải nghiệm người dùng trên thiết bị di động.
 
-When you're ready, run:
+**Công nghệ sử dụng:**
+*   **Frontend:** React Native, Expo (SDK 58), Expo Router (Tabs/Stack).
+*   **Ngôn ngữ:** TypeScript.
+*   **AI & Xử lý âm thanh:** Gemini Live API (WebSocket), `@siteed/audio-studio` (ghi âm PCM), `expo-audio` (phát âm thanh).
+*   **Backend & Cơ sở dữ liệu:** Firebase Firestore, AsyncStorage (lưu trữ cục bộ).
+*   **Build Tool:** EAS Build (Expo Application Services).
 
-```bash
-npm run reset-project
+**Luồng hoạt động của Voice AI:**
+```mermaid
+sequenceDiagram
+    participant User
+    participant App (React Native)
+    participant GeminiLive (WebSocket)
+    participant Firebase
+
+    User->>App: Nhấn giữ Micro & Nói
+    App->>GeminiLive: Stream âm thanh (PCM 16kHz Base64)
+    GeminiLive-->>App: Bản ghi văn bản (Transcription)
+    GeminiLive->>App: Yêu cầu gọi hàm (Function Call)
+    App->>Firebase: Lưu ghi chú / Xóa ghi chú
+    App-->>GeminiLive: Phản hồi kết quả
+    GeminiLive-->>App: Stream âm thanh trả lời (PCM 24kHz)
+    App->>User: Phát âm thanh (Text-to-Speech)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-### Other setup steps
+## 📸 Giao diện ứng dụng
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+*(Lưu ý: Thay thế các đường link ảnh dưới đây bằng ảnh chụp màn hình thực tế của bạn)*
 
-## Learn more
+| Màn hình Ghi chú | Màn hình Lịch biểu | Giao diện Chat AI |
+| :---: | :---: | :---: |
+| ![Màn hình Ghi chú](https://via.placeholder.com/250x500.png?text=Home+Screen) | ![Màn hình Lịch biểu](https://via.placeholder.com/250x500.png?text=Smart+Timeline) | ![Giao diện Chat AI](https://via.placeholder.com/250x500.png?text=AI+Chat+Voice) |
 
-To learn more about developing your project with Expo, look at the following resources:
+---
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## 📂 Cấu trúc thư mục
 
-## Join the community
+```text
+AiReminderApp/
+├── app.json                 # Cấu hình Expo & Quyền Native
+├── eas.json                 # Cấu hình EAS Build
+├── src/
+│   ├── app/                 # Expo Router (Điều hướng)
+│   │   ├── (tabs)/          # Thanh Bottom Tabs
+│   │   │   ├── index.tsx    # Tab Ghi chú
+│   │   │   ├── calendar.tsx # Tab Lịch biểu
+│   │   │   └── chat.tsx     # Tab Chat AI (Voice)
+│   │   ├── add-note.tsx     # Modal Thêm/Sửa ghi chú
+│   │   └── _layout.tsx      # Layout gốc
+│   ├── components/          # Các UI Components dùng chung
+│   ├── services/            # Xử lý logic API
+│   │   ├── geminiService.ts # Gọi API Text (REST)
+│   │   └── liveSocketService.ts # Xử lý WebSocket Live API (Voice)
+│   ├── storage/             # Lưu trữ dữ liệu (Firebase & AsyncStorage)
+│   ├── theme/               # Quản lý màu sắc, typography
+│   ├── types/               # Định nghĩa Interfaces TypeScript
+│   └── utils/               # Các hàm tiện ích
+└── package.json
+```
 
-Join our community of developers creating universal apps.
+---
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## ⚙️ Yêu cầu hệ thống
+
+Trước khi chạy dự án, hãy đảm bảo máy tính của bạn đã cài đặt:
+*   **Node.js** (phiên bản 18 trở lên)
+*   **Git**
+*   **Android Studio** (nếu chạy máy ảo Android)
+*   Tài khoản **Expo** (để chạy EAS Build)
+*   Tài khoản **Firebase** (để tạo Project Firestore)
+*   **Google AI Studio API Key** (để lấy Gemini API Key)
+
+---
+
+## 🚀 Hướng dẫn cài đặt & Chạy dự án
+
+**Bước 1: Clone dự án**
+```bash
+git clone https://github.com/txhiuu/ai-reminder-assistant.git
+cd ai-reminder-assistant
+```
+
+**Bước 2: Cài đặt thư viện**
+```bash
+npm install
+```
+
+**Bước 3: Cấu hình biến môi trường**
+Tạo một file `.env` ở thư mục gốc của dự án và thêm các khóa API của bạn:
+```env
+EXPO_PUBLIC_GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+**Bước 4: Cấu hình Firebase**
+Thay thế thông tin cấu hình Firebase của bạn trong file `src/config/firebase.ts`.
+
+**Bước 5: Chạy ứng dụng (Development Build)**
+*Lưu ý: Vì dự án sử dụng các thư viện Native xử lý âm thanh (`@siteed/audio-studio`), bạn không thể chạy bằng Expo Go. Bạn phải tạo Development Build.*
+
+```bash
+# Đăng nhập Expo
+eas login
+
+# Tạo bản build cho Android (hoặc iOS)
+eas build --profile development --platform android
+
+# Sau khi tải file APK về máy và cài đặt, chạy server code:
+npx expo start --dev-client
+```
+
+---
+
+## 🤝 Đóng góp
+Mọi đóng góp, báo lỗi (issues) hoặc yêu cầu tính năng mới đều được hoan nghênh. Hãy tạo Pull Request hoặc mở Issue trên GitHub.
+
+## 📝 Giấy phép
+Dự án này được phân phối dưới giấy phép **MIT License**. Xem file `LICENSE` để biết thêm chi tiết.
+
+---
+*Được phát triển với ❤️ bởi txhiuu*
